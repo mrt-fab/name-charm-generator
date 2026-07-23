@@ -78,10 +78,23 @@ export function addLoopTab(shape, bbox, T, d) {
   return { cx, cy, L, W, w, leftX: cx - L / 2, footprint: ring };
 }
 
+// Curb-style chain link: small rounded ring with chamfered top/bottom bands
+// (octagonal profile approximating a round wire, after the reference pendant chain).
+function chainLinkShape(cx, cy, L, W, w, T) {
+  const mid = ovalRing(cx, cy, L, W, w);
+  const cham = 0.6;
+  const slim = G.offset(mid, -Math.min(cham, w / 2 - 0.3)); // shrink outer + grow hole
+  const shape = { base: [], bandAdds: [], bandSubs: [] };
+  shape.bandAdds.push({ z0: 0, z1: cham, paths: slim });
+  shape.bandAdds.push({ z0: cham, z1: T - cham, paths: mid });
+  shape.bandAdds.push({ z0: T - cham, z1: T, paths: slim });
+  return { shape, mid };
+}
+
 // Chain + end hardware, extending left from the loop. Returns extra piece shapes.
 // endType: 'none' | 'ring' | 'doublering'
 export function buildChain(firstShape, loop, T, d, linkCount, endType) {
-  const L = 11, W = 8, w = 2;   // chain link dims
+  const L = 9, W = 7, w = 1.8;  // chain link dims (compact curb look)
   const shapes = [];
   const cy = loop.cy;
 
@@ -90,13 +103,12 @@ export function buildChain(firstShape, loop, T, d, linkCount, endType) {
   let prevLeftX = loop.leftX;
 
   for (let k = 0; k < linkCount; k++) {
-    const P = 5.0; // cap penetration past previous piece's left edge
+    const P = 4.5; // cap penetration past previous piece's left edge (pitch = L - P)
     const cx = prevLeftX + P - L / 2;
-    const paths = ovalRing(cx, cy, L, W, w);
-    const shape = makeShape(paths);
-    weave(shape, paths, prevShape, prevPaths, d, 'x');
+    const { shape, mid } = chainLinkShape(cx, cy, L, W, w, T);
+    weave(shape, mid, prevShape, prevPaths, d, 'x');
     shapes.push(shape);
-    prevShape = shape; prevPaths = paths; prevLeftX = cx - L / 2;
+    prevShape = shape; prevPaths = mid; prevLeftX = cx - L / 2;
   }
 
   if (endType === 'ring' || endType === 'doublering') {
