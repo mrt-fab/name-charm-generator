@@ -88,6 +88,13 @@ function fitCamera(box) {
   camera.updateProjectionMatrix();
 }
 
+// Recolor existing meshes without rebuilding geometry (parts are in color order).
+export function setPartColors(colors) {
+  group.children.forEach((child, i) => {
+    if (colors[i]) child.material.color.set(colors[i]);
+  });
+}
+
 // debug helpers (console only)
 window.__camTop = () => {
   const box = new THREE.Box3().setFromObject(group);

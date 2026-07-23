@@ -14,8 +14,42 @@ export const FONT_DEFS = [
   { id: 'baloo', label: 'Baloo 2', file: 'fonts/Baloo2-ExtraBold.ttf', coverage: 'latin', family: 'Baloo 2' },
   { id: 'titan', label: 'Titan One', file: 'fonts/TitanOne-Regular.ttf', coverage: 'latin', family: 'Titan One' },
   { id: 'grandstander', label: 'Grandstander', file: 'fonts/Grandstander-Bold.ttf', coverage: 'latin', family: 'Grandstander' },
-  { id: 'katakanaboy', label: 'カタカナボーイ', coverage: 'kata', family: 'Katakanaboy', userLoaded: true, note: 'カタカナ専用・Fabフォルダの Katakanaboy-R.otf を読み込んでください' },
 ];
+
+// User-loaded fonts (.ttf/.otf picked from disk; cached locally in IndexedDB only).
+export const userFonts = []; // [{id, label, family, coverage}]
+
+export function allFontDefs() {
+  return [...FONT_DEFS, ...userFonts];
+}
+
+// Detect coverage of a parsed font: 'jp' | 'latin' | 'kata' | 'unknown'
+function detectCoverage(font) {
+  const hira = hasGlyph(font, 'あ'), kata = hasGlyph(font, 'ア'), latin = hasGlyph(font, 'A');
+  if (hira) return 'jp';
+  if (kata) return 'kata';
+  if (latin) return 'latin';
+  return 'unknown';
+}
+
+let userFontSeq = 0;
+
+// Register a user font from raw bytes. Returns its def (throws on parse failure).
+export function addUserFont(name, arrayBuffer) {
+  const id = 'user_' + (userFontSeq++);
+  const family = 'UserFont_' + id;
+  const font = registerFont(id, arrayBuffer, family);
+  const label = (font.names?.fullName?.ja || font.names?.fullName?.en || name).slice(0, 24);
+  const def = { id, label, family, coverage: detectCoverage(font), userLoaded: true };
+  userFonts.push(def);
+  return def;
+}
+
+export function removeUserFont(id) {
+  const i = userFonts.findIndex((d) => d.id === id);
+  if (i >= 0) userFonts.splice(i, 1);
+  loaded.delete(id);
+}
 
 const loaded = new Map();   // id -> opentype.Font
 const scaleCache = new Map(); // id|letterH -> µm per font unit
