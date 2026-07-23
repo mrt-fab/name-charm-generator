@@ -146,6 +146,25 @@
     color: #8a6d00; background: #ffe9a8; padding: 1.5px 6px; border-radius: 999px;
   }
   #fontGrid .badge.kata { color: #7c2d8e; background: #f3d6fa; }
+  #fontGrid .badge.user { color: #0a5c36; background: #cdeedd; }
+  #fontGrid .removeFont {
+    position: absolute; top: 3px; left: 5px;
+    font-size: 13px; color: rgba(0,0,0,0.35); cursor: pointer;
+    padding: 2px 5px; border-radius: 8px;
+  }
+  #fontGrid .removeFont:hover { color: #c0392b; background: rgba(192,57,43,0.1); }
+  #fontGrid button.addFont {
+    border-style: dashed; border-color: rgba(0,0,0,0.18); background: rgba(255,255,255,0.5);
+  }
+  #fontGrid button.addFont .plus { font-size: 21px; line-height: 1.25; display: block; color: var(--ink-2); }
+
+  .spinner {
+    display: inline-block; width: 14px; height: 14px; vertical-align: -2px;
+    border: 2px solid rgba(255,255,255,0.4); border-top-color: #fff;
+    border-radius: 50%; animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  #generateBtn.stale { box-shadow: 0 8px 20px rgba(0,113,227,0.35), 0 0 0 4px rgba(0,113,227,0.25); }
 
   .hint { font-size: 11px; color: var(--ink-2); line-height: 1.55; margin-top: 8px; }
   .warn {
@@ -215,15 +234,10 @@
         <div class="warn" id="warnMissing"></div>
         <div id="fontGrid" style="margin-top:10px;"></div>
         <div class="hint" id="fontNote" style="display:none;"></div>
+        <input type="file" id="fontFile" accept=".otf,.ttf" multiple style="display:none;">
         <div class="row" id="kataRow" style="display:none;">
           <label class="name" style="min-width:auto;">ひらがな→カタカナ自動変換</label>
           <input type="checkbox" id="kataAuto" checked style="margin-left:auto; width:18px; height:18px;">
-        </div>
-        <div id="kataLoad" style="display:none; margin-top:8px;">
-          <label class="fileBtn">フォントファイルを読み込む（Katakanaboy-R.otf）
-            <input type="file" id="kataFile" accept=".otf,.ttf">
-          </label>
-          <div class="hint">カタカナボーイは配布ライセンスの関係でアプリに同梱していません。お手元のフォントファイルを選択してください（この端末内で処理され、保存・送信はされません）。</div>
         </div>
         <div class="row">
           <label class="name">文字の太らせ</label>
@@ -298,8 +312,10 @@
       </section>
 
       <section class="card">
-        <h2>書き出し</h2>
-        <button class="btn" id="exportBtn">STLをダウンロード</button>
+        <h2>生成・書き出し</h2>
+        <button class="btn" id="generateBtn">生成する</button>
+        <button class="btn secondary" id="exportBtn" disabled>STLをダウンロード</button>
+        <div class="hint" id="exportStale" style="display:none;">設定が変更されています。「生成する」で反映してからダウンロードしてください。</div>
         <div id="stats"></div>
         <div class="hint" id="bambuHint" style="display:none;">
           複数色: ZIPを展開し、Bambu Studioに全STLを同時ドラッグ →「1つのオブジェクトとして読み込みますか？」で<b>はい</b> → パーツごとにフィラメントを割り当ててください。
