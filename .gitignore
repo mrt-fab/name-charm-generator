@@ -1,0 +1,11 @@
+# macOS
+.DS_Store
+
+# ユーザー提供フォント（カタカナボーイ等）は再配布禁止のため絶対にコミットしない
+*.otf
+Katakanaboy*
+_kata_test*
+
+# 一時ファイル
+*.tmp
+dist/

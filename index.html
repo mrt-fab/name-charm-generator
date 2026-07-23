@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>つながるネームチャーム — STLジェネレーター</title>
+<style>
+  /* ---------- fonts for UI previews ---------- */
+  @font-face { font-family: 'Cherry Bomb One'; src: url('fonts/CherryBombOne-Regular.ttf'); }
+  @font-face { font-family: 'Potta One'; src: url('fonts/PottaOne-Regular.ttf'); }
+  @font-face { font-family: 'Mochiy Pop One'; src: url('fonts/MochiyPopOne-Regular.ttf'); }
+  @font-face { font-family: 'Kiwi Maru'; src: url('fonts/KiwiMaru-Medium.ttf'); }
+  @font-face { font-family: 'Zen Maru Gothic'; src: url('fonts/ZenMaruGothic-Bold.ttf'); }
+  @font-face { font-family: 'DotGothic16'; src: url('fonts/DotGothic16-Regular.ttf'); }
+  @font-face { font-family: 'Bagel Fat One'; src: url('fonts/BagelFatOne-Regular.ttf'); }
+  @font-face { font-family: 'Baloo 2'; src: url('fonts/Baloo2-ExtraBold.ttf'); }
+  @font-face { font-family: 'Titan One'; src: url('fonts/TitanOne-Regular.ttf'); }
+  @font-face { font-family: 'Grandstander'; src: url('fonts/Grandstander-Bold.ttf'); }
+
+  :root {
+    --glass: rgba(255, 255, 255, 0.52);
+    --glass-strong: rgba(255, 255, 255, 0.72);
+    --stroke: rgba(255, 255, 255, 0.65);
+    --ink: #1d1d1f;
+    --ink-2: rgba(29, 29, 31, 0.62);
+    --accent: #0071e3;
+    --radius-lg: 26px;
+    --radius-md: 18px;
+    --radius-sm: 12px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-font-smoothing: antialiased; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(58% 72% at 12% 8%, #ffd9e8 0%, transparent 60%),
+      radial-gradient(55% 60% at 88% 12%, #d3e7ff 0%, transparent 62%),
+      radial-gradient(70% 80% at 78% 90%, #dcf5e5 0%, transparent 60%),
+      radial-gradient(60% 70% at 18% 88%, #fff3cf 0%, transparent 58%),
+      linear-gradient(160deg, #f4f6fb 0%, #eef1f8 100%);
+  }
+
+  #stage { position: fixed; inset: 0; }
+  #stage canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+
+  /* ---------- floating glass header ---------- */
+  header {
+    position: fixed; top: 18px; left: 22px; z-index: 5;
+    display: flex; align-items: center; gap: 12px;
+    padding: 12px 20px;
+    background: var(--glass);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border: 1px solid var(--stroke);
+    border-radius: 22px;
+    box-shadow: 0 12px 34px rgba(31, 45, 80, 0.14), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+  header h1 { font-size: 17px; font-weight: 700; letter-spacing: 0.01em; }
+  header .sub { font-size: 12px; color: var(--ink-2); }
+
+  /* ---------- control panel ---------- */
+  #panel {
+    position: fixed; top: 18px; right: 18px; bottom: 18px; z-index: 5;
+    width: 384px; max-width: calc(100vw - 36px);
+    display: flex; flex-direction: column;
+    background: var(--glass);
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    border: 1px solid var(--stroke);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 18px 48px rgba(31, 45, 80, 0.18), inset 0 1px 0 rgba(255,255,255,0.85);
+    overflow: hidden;
+  }
+  #panel-scroll { overflow-y: auto; padding: 8px 16px 16px; flex: 1; }
+  #panel-scroll::-webkit-scrollbar { width: 8px; }
+  #panel-scroll::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.14); border-radius: 4px; }
+
+  section.card {
+    background: var(--glass-strong);
+    border: 1px solid rgba(255,255,255,0.7);
+    border-radius: var(--radius-md);
+    box-shadow: 0 4px 14px rgba(31,45,80,0.06), inset 0 1px 0 rgba(255,255,255,0.9);
+    padding: 14px 14px 15px;
+    margin-top: 10px;
+  }
+  section.card h2 {
+    font-size: 12px; font-weight: 700; letter-spacing: 0.06em;
+    color: var(--ink-2); text-transform: uppercase; margin-bottom: 10px;
+  }
+
+  .row { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+  .row label.name { font-size: 13px; flex: 0 0 auto; min-width: 74px; }
+  .row output { font-size: 12px; color: var(--ink-2); min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  input[type="text"] {
+    width: 100%; font-size: 20px; font-weight: 600;
+    padding: 12px 14px;
+    border: 1px solid rgba(0,0,0,0.08);
+    border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.85);
+    outline: none;
+  }
+  input[type="text"]:focus { border-color: var(--accent); box-shadow: 0 0 0 3.5px rgba(0,113,227,0.22); }
+
+  input[type="range"] {
+    flex: 1; appearance: none; height: 4px; border-radius: 2px;
+    background: rgba(0,0,0,0.14); outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    appearance: none; width: 20px; height: 20px; border-radius: 50%;
+    background: #fff; border: 0.5px solid rgba(0,0,0,0.08);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.22);
+    cursor: pointer;
+  }
+
+  .seg {
+    display: flex; background: rgba(0,0,0,0.055);
+    border-radius: 999px; padding: 3px; gap: 2px; flex: 1;
+  }
+  .seg button {
+    flex: 1; border: none; background: transparent; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: var(--ink-2);
+    padding: 7px 4px; border-radius: 999px; transition: all .18s ease;
+    font-family: inherit;
+  }
+  .seg button.on {
+    background: #fff; color: var(--ink);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.16), inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+
+  /* font picker */
+  #fontGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  #fontGrid button {
+    position: relative;
+    border: 1.5px solid rgba(0,0,0,0.07); border-radius: var(--radius-sm);
+    background: rgba(255,255,255,0.82); cursor: pointer;
+    padding: 10px 8px 7px; text-align: center; transition: all .15s ease;
+  }
+  #fontGrid button:hover { transform: translateY(-1px); box-shadow: 0 6px 14px rgba(31,45,80,0.10); }
+  #fontGrid button.on { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0,113,227,0.18); background: #fff; }
+  #fontGrid .sample { font-size: 21px; line-height: 1.25; display: block; }
+  #fontGrid .fname { font-size: 10px; color: var(--ink-2); display: block; margin-top: 2px; }
+  #fontGrid .badge {
+    position: absolute; top: 5px; right: 6px; font-size: 9px; font-weight: 700;
+    color: #8a6d00; background: #ffe9a8; padding: 1.5px 6px; border-radius: 999px;
+  }
+  #fontGrid .badge.kata { color: #7c2d8e; background: #f3d6fa; }
+
+  .hint { font-size: 11px; color: var(--ink-2); line-height: 1.55; margin-top: 8px; }
+  .warn {
+    display: none; font-size: 12px; line-height: 1.5;
+    background: rgba(255, 214, 148, 0.5); border: 1px solid rgba(214, 138, 0, 0.35);
+    color: #6d4a00; border-radius: var(--radius-sm); padding: 8px 11px; margin-top: 8px;
+  }
+  .warn.show { display: block; }
+
+  /* color bands */
+  .bandRow { display: flex; align-items: center; gap: 9px; margin-top: 9px; }
+  .bandRow input[type="color"] {
+    width: 34px; height: 34px; border: none; border-radius: 10px; cursor: pointer;
+    background: none; padding: 0;
+  }
+  .bandRow input[type="color"]::-webkit-color-swatch-wrapper { padding: 2px; }
+  .bandRow input[type="color"]::-webkit-color-swatch { border-radius: 8px; border: 1px solid rgba(0,0,0,0.12); }
+  #bandViz {
+    margin-top: 10px; height: 34px; border-radius: 10px; overflow: hidden;
+    display: flex; flex-direction: column-reverse;
+    border: 1px solid rgba(0,0,0,0.1);
+  }
+  #bandViz div { transition: height .2s ease; }
+
+  .btn {
+    display: block; width: 100%; text-align: center; cursor: pointer;
+    border: none; border-radius: 14px; padding: 13px;
+    font-size: 15px; font-weight: 700; font-family: inherit;
+    background: var(--accent); color: #fff;
+    box-shadow: 0 8px 20px rgba(0,113,227,0.35), inset 0 1px 0 rgba(255,255,255,0.25);
+    transition: transform .12s ease, box-shadow .12s ease;
+    margin-top: 10px;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn:disabled { background: rgba(0,0,0,0.18); box-shadow: none; cursor: default; }
+  .btn.secondary { background: rgba(255,255,255,0.9); color: var(--ink); box-shadow: 0 4px 12px rgba(31,45,80,0.10); }
+
+  .fileBtn {
+    display: inline-block; font-size: 12px; font-weight: 600; cursor: pointer;
+    color: var(--accent); background: rgba(0,113,227,0.1);
+    padding: 7px 12px; border-radius: 999px;
+  }
+  .fileBtn input { display: none; }
+
+  #stats { font-size: 11px; color: var(--ink-2); margin-top: 8px; line-height: 1.6; font-variant-numeric: tabular-nums; }
+
+  details.debug summary { font-size: 11px; color: var(--ink-2); cursor: pointer; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <div id="stage"><canvas id="viewport"></canvas></div>
+
+  <header>
+    <div>
+      <h1>つながるネームチャーム</h1>
+      <div class="sub">可動ジョイント一体成形 STLジェネレーター · Bambu Lab P2S対応</div>
+    </div>
+  </header>
+
+  <div id="panel">
+    <div id="panel-scroll">
+
+      <section class="card">
+        <h2>文字とフォント</h2>
+        <input type="text" id="textInput" value="ナマエ" maxlength="20" placeholder="ひらがな・カタカナ・英数字">
+        <div class="warn" id="warnMissing"></div>
+        <div id="fontGrid" style="margin-top:10px;"></div>
+        <div class="hint" id="fontNote" style="display:none;"></div>
+        <div class="row" id="kataRow" style="display:none;">
+          <label class="name" style="min-width:auto;">ひらがな→カタカナ自動変換</label>
+          <input type="checkbox" id="kataAuto" checked style="margin-left:auto; width:18px; height:18px;">
+        </div>
+        <div id="kataLoad" style="display:none; margin-top:8px;">
+          <label class="fileBtn">フォントファイルを読み込む（Katakanaboy-R.otf）
+            <input type="file" id="kataFile" accept=".otf,.ttf">
+          </label>
+          <div class="hint">カタカナボーイは配布ライセンスの関係でアプリに同梱していません。お手元のフォントファイルを選択してください（この端末内で処理され、保存・送信はされません）。</div>
+        </div>
+        <div class="row">
+          <label class="name">文字の太らせ</label>
+          <input type="range" id="dilate" min="0" max="0.8" step="0.05" value="0.3">
+          <output id="dilateOut">0.30mm</output>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>サイズ</h2>
+        <div class="row">
+          <label class="name">文字の高さ</label>
+          <input type="range" id="letterH" min="12" max="40" step="1" value="20">
+          <output id="letterHOut">20mm</output>
+        </div>
+        <div class="row">
+          <label class="name">厚み</label>
+          <input type="range" id="thickness" min="3" max="10" step="0.5" value="5">
+          <output id="thicknessOut">5.0mm</output>
+        </div>
+      </section>
+
+      <section class="card">
+        <h2>カラー（Z方向の層で色分け）</h2>
+        <div class="seg" id="colorSeg">
+          <button data-v="1">1色</button>
+          <button data-v="2" class="on">2色</button>
+          <button data-v="3">3色</button>
+        </div>
+        <div id="bandRows"></div>
+        <div id="bandViz"></div>
+        <div class="hint">色の境界は印刷レイヤーに平行な水平面。AMSでも手動フィラメント交換でも、無駄なく色替えできます。</div>
+      </section>
+
+      <section class="card">
+        <h2>ジョイント</h2>
+        <div class="row">
+          <label class="name">クリアランス</label>
+          <div class="seg" id="clearSeg">
+            <button data-v="0.3">きつめ</button>
+            <button data-v="0.4" class="on">標準</button>
+            <button data-v="0.5">ゆるめ</button>
+          </div>
+        </div>
+        <div class="hint">初回は「標準」推奨。関節が固い場合は「ゆるめ」で再出力してください。</div>
+      </section>
+
+      <section class="card">
+        <h2>金具・チェーン</h2>
+        <div class="row">
+          <label class="name">ループ穴</label>
+          <div class="seg" id="loopSeg">
+            <button data-v="none">なし</button>
+            <button data-v="loop" class="on">あり</button>
+          </div>
+        </div>
+        <div class="row">
+          <label class="name">チェーン</label>
+          <input type="range" id="chainLinks" min="0" max="8" step="1" value="0">
+          <output id="chainOut">なし</output>
+        </div>
+        <div class="row">
+          <label class="name">先端金具</label>
+          <div class="seg" id="endSeg">
+            <button data-v="none" class="on">なし</button>
+            <button data-v="ring">丸カン</button>
+            <button data-v="doublering">二重</button>
+            <button data-v="carabiner">ねじ⚠︎</button>
+          </div>
+        </div>
+        <div class="hint">すべて印刷一体（プリントインプレース）。ループ穴には市販の金具・ストラップも通せます。<br>「ねじ⚠︎」= ねじ式カラビナ（実験的）: 縦ねじピンでゲートを開閉する構造。印刷後にピンを反時計回りに回して緩めてください。固着する場合はクリアランス「ゆるめ」で再出力を。</div>
+      </section>
+
+      <section class="card">
+        <h2>書き出し</h2>
+        <button class="btn" id="exportBtn">STLをダウンロード</button>
+        <div id="stats"></div>
+        <div class="hint" id="bambuHint" style="display:none;">
+          複数色: ZIPを展開し、Bambu Studioに全STLを同時ドラッグ →「1つのオブジェクトとして読み込みますか？」で<b>はい</b> → パーツごとにフィラメントを割り当ててください。
+        </div>
+        <details class="debug">
+          <summary>デバッグ（Z断面）</summary>
+          <div class="row">
+            <label class="name">断面表示</label>
+            <input type="checkbox" id="sectionOn" style="width:16px;height:16px;">
+            <input type="range" id="sectionZ" min="0" max="5" step="0.1" value="2.5">
+          </div>
+        </details>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="vendor/opentype.min.js"></script>
+  <script src="vendor/clipper.js"></script>
+  <script src="vendor/earcut.min.js"></script>
+  <script type="importmap">
+    { "imports": { "three": "./vendor/three.module.js" } }
+  </script>
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
