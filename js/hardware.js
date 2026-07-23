@@ -125,7 +125,7 @@ function chainLinkShape(cx, cy, L, W, w, T) {
 }
 
 // Chain + end hardware, extending left from the loop. Returns extra piece shapes.
-// endType: 'none' | 'ring' | 'doublering'
+// endType: 'none' | 'snapring' | 'carabiner'
 export function buildChain(firstShape, loop, T, d, linkCount, endType) {
   const L = 9, W = 7, w = 1.8;  // chain link dims (compact curb look)
   const shapes = [];
@@ -151,74 +151,104 @@ export function buildChain(firstShape, loop, T, d, linkCount, endType) {
     const shape = makeShape(paths);
     weave(shape, paths, prevShape, prevPaths, d, 'y', cy);
     shapes.push(shape);
-  } else if (endType === 'ring' || endType === 'doublering') {
-    const dbl = endType === 'doublering';
-    const rOut = dbl ? 10 : 9, wall = 2.5, P = dbl ? 6.5 : (linkCount ? 6.5 : 7.0);
-    const cx = prevLeftX + P - rOut;
-    let paths = annulus(cx, cy, rOut, wall);
-    if (dbl) paths = G.unionAll([...paths, ...annulus(cx - 1.2, cy, rOut, wall)]);
-    const shape = makeShape(paths);
-    weave(shape, paths, prevShape, prevPaths, d, 'y', cy);
-    shapes.push(shape);
   } else if (endType === 'carabiner') {
     shapes.push(...buildCarabiner(prevShape, prevPaths, prevLeftX, cy, d));
   }
   return shapes;
 }
 
-// ---- screw-gate carabiner (experimental) ------------------------------------
-// Flat C-ring whose gate is two overlapping half-height arms, locked by a VERTICAL
-// screw pin threaded through both arms. The thread is a discretized helix: per-slab
-// circular core + a lobe rotated by z/pitch·360° — pin and holes share the phase, so
-// it prints pre-engaged and unscrews upward to open the gate.
+
+// ---- screw-lock carabiner (after the reference "Standard Carabiner" + screw knob) --
+// Flat C-body. The gate bar pivots on a captured-disc joint (same mechanism as the
+// letter joints) and swings OUTWARD to open. The lock: a vertical post stands on a
+// round boss; the gate tip carries an open-mouthed notch collar around the post, and
+// a knurled knob rides the post's discretized-helix thread. In the printed (locked)
+// position the knob's skirt surrounds the collar, so its prongs jam against the skirt
+// after ~0.4mm of swing. Unscrewing one turn lifts the skirt clear and frees the gate.
 
 function threadLobe(px, py, phi, rOuter, width) {
   return G.capsule(px, py, px + rOuter * Math.cos(phi), py + rOuter * Math.sin(phi), width);
 }
 
+// 12-lobe knurled circle for the knob's grip
+function knurledCircle(cx, cy, r, depth = 0.35, lobes = 12, n = 96) {
+  const p = [];
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2;
+    const rr = r + depth * Math.cos(a * lobes);
+    p.push({ X: G.mm(cx + rr * Math.cos(a)), Y: G.mm(cy + rr * Math.sin(a)) });
+  }
+  return [p];
+}
+
 export function buildCarabiner(prevShape, prevPaths, prevLeftX, cy, d) {
   const { cxy, cz, T } = d;
-  const L = 22, W = 16, w = 3;           // body oval
-  const P = 6.5;                          // Hopf weave penetration into previous piece
-  const cx = prevLeftX + P - L / 2;
+  const L = 30, W = 18, w = 3;              // body oval
+  const P = 7.0;                             // Hopf weave penetration into previous piece
+  const bx = prevLeftX + P - L / 2, by = cy;
+  const R = (x0, y0, x1, y1) => rect(bx + x0, by + y0, bx + x1, by + y1);
+  const C = (x, y, r, n) => G.circle(bx + x, by + y, r, n);
 
-  // C-ring: oval ring minus the right cap
-  const ring = ovalRing(cx, cy, L, W, w);
-  const gateX = cx + L / 2 - 6;
-  const gap = bigRect(gateX, cy - W / 2 - 2, cx + L / 2 + 2, cy + W / 2 + 2);
-  const cBody = G.diff(ring, gap);
+  const lipH = 1.2;
+  const gateZ0 = lipH + cz, gateZ1 = T - lipH - cz;   // the whole gate lives in this band
+  const Pv = { x: 9.7, y: -7.0 };            // pivot center
+  const Pp = { x: 9.5, y: 5.8 };             // lock post center
+  const discR = 3.2, shaftR = 2.0, armW = 3.2;
+  const rCore = 1.6, rThread = 2.4, lobeW = 1.4, pitch = 2.4, hs = 0.15;
+  const bossH = 1.0, bossR = 5.4;
+  const knobZ0 = bossH + cz;                 // knob prints bridging one layer onto the boss
+  const skirtH = 1.7, skirtInner = 3.8, knobR = 4.2, knobH = 5.0;
+  const collarR = 3.4;
 
-  const railY = W / 2 - w / 2;            // open end centers
-  const px = gateX + 2.6, py = cy;        // pin axis
-  const rCore = 2.2, rOuter = 3.0, lobeW = 1.5, pitch = 2.4, hs = 0.15;
-  const rLug = 4.6, knobR = 4.5, knobH = 2.2;
-  const zSplit = T / 2;
-
+  // --- body: C-ring (right cap removed) + pivot pad + boss + lock post ---
+  const cBody = G.diff(ovalRing(bx, by, L, W, w), R(7, -13, 17, 13));
   const body = makeShape(cBody);
-  // overlapping gate arms: top arm keeps [T/2, T], bottom arm keeps [0, T/2 - cz]
-  const armTop = [...G.capsule(gateX - 1, cy + railY, px, py, w), ...G.circle(px, py, rLug)];
-  const armBot = [...G.capsule(gateX - 1, cy - railY, px, py, w), ...G.circle(px, py, rLug)];
-  body.bandAdds.push({ z0: zSplit, z1: T, paths: armTop });
-  body.bandAdds.push({ z0: 0, z1: zSplit - cz, paths: armBot });
+  body.base.push(C(Pv.x, Pv.y, 5.2));        // pivot pad (merges with the lower body end)
 
-  const pin = makeShape([]);
-  const phiAt = (z) => (z / pitch) * Math.PI * 2;
-  for (let z = 0; z < T + cz - 1e-9; z += hs) {
-    const z1 = Math.min(z + hs, T + cz);
-    const phi = phiAt(z + hs / 2);
-    // pin: core + thread lobe
-    pin.bandAdds.push({ z0: z, z1, paths: [...G.circle(px, py, rCore), ...threadLobe(px, py, phi, rOuter, lobeW)] });
-    // matching threaded hole through whichever arm exists at this height
-    const hole = [
-      ...G.circle(px, py, rCore + cxy),
-      ...threadLobe(px, py, phi, rOuter + cxy, lobeW + 2 * cxy),
-      ...(z < 0.4 ? G.circle(px, py, rCore + cxy + 0.15) : []), // elephant-foot relief
-    ];
-    body.bandSubs.push({ z0: z, z1, paths: hole });
+  // pivot socket: lip holes + elephant relief + cavity with outward swing slot
+  body.bandSubs.push({ z0: 0, z1: lipH, paths: C(Pv.x, Pv.y, shaftR + cxy) });
+  body.bandSubs.push({ z0: T - lipH, z1: T, paths: C(Pv.x, Pv.y, shaftR + cxy) });
+  body.bandSubs.push({ z0: 0, z1: 0.4, paths: C(Pv.x, Pv.y, shaftR + cxy + 0.15) });
+  const slot = [];
+  for (let k = 0; k <= 5; k++) {
+    const th = Math.PI / 2 - (k / 5) * (Math.PI * 50 / 180); // 90° → 40° (outward swing)
+    slot.push(...G.capsule(bx + Pv.x, by + Pv.y,
+      bx + Pv.x + 7.0 * Math.cos(th), by + Pv.y + 7.0 * Math.sin(th), armW + 2 * cxy));
   }
-  // knob above the top arm (cz gap so it doesn't fuse to the lug's top face)
-  pin.bandAdds.push({ z0: T + cz, z1: T + cz + knobH, paths: G.circle(px, py, knobR) });
+  body.bandSubs.push({ z0: lipH, z1: T - lipH, paths: [...C(Pv.x, Pv.y, discR + cxy), ...slot] });
+
+  // round boss under the knob (merges into the top rail) + the threaded post
+  body.bandAdds.push({ z0: 0, z1: bossH, paths: C(Pp.x, Pp.y, bossR) });
+  body.bandAdds.push({ z0: 0, z1: knobZ0 + knobH + 0.4, paths: C(Pp.x, Pp.y, rCore) });
+
+  // --- gate piece: full-height shaft + one-band disc/arm/bar/collar ---
+  const gate = { base: [], bandAdds: [], bandSubs: [] };
+  gate.base.push(C(Pv.x, Pv.y, shaftR));
+  const collar = G.diff(
+    G.diff(C(Pp.x, Pp.y, collarR), C(Pp.x, Pp.y, rCore + cxy)),
+    R(Pp.x - 4.4, Pp.y - (rCore + cxy), Pp.x - 0.9, Pp.y + (rCore + cxy)) // mouth opens inward (−x)
+  );
+  gate.bandAdds.push({ z0: gateZ0, z1: gateZ1, paths: [
+    ...C(Pv.x, Pv.y, discR),
+    ...G.capsule(bx + Pv.x, by + Pv.y, bx + Pv.x, by + 3.0, armW),  // arm/bar up from the pivot
+    ...collar,
+  ] });
+
+  // --- knob piece: skirt + threaded bore, knurled outside ---
+  const knob = { base: [], bandAdds: [], bandSubs: [] };
+  const knurl = knurledCircle(bx + Pp.x, by + Pp.y, knobR);
+  knob.bandAdds.push({ z0: knobZ0, z1: knobZ0 + skirtH, paths: G.diff(knurl, C(Pp.x, Pp.y, skirtInner)) });
+  for (let z = knobZ0 + skirtH; z < knobZ0 + knobH - 1e-9; z += hs) {
+    const z1 = Math.min(z + hs, knobZ0 + knobH);
+    const phi = ((z + hs / 2) / pitch) * Math.PI * 2;
+    knob.bandAdds.push({ z0: z, z1, paths: G.diff(knurl, [
+      ...C(Pp.x, Pp.y, rCore + cxy),
+      ...threadLobe(bx + Pp.x, by + Pp.y, phi, rThread + cxy, lobeW + 2 * cxy),
+    ]) });
+    // post's matching thread lobe at the same phase (engaged as printed)
+    body.bandAdds.push({ z0: z, z1, paths: threadLobe(bx + Pp.x, by + Pp.y, phi, rThread, lobeW) });
+  }
 
   weave(body, cBody, prevShape, prevPaths, d, 'y', cy);
-  return [body, pin];
+  return [body, gate, knob];
 }
