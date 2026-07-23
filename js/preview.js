@@ -80,7 +80,7 @@ function fitCamera(box) {
   const center = box.getCenter(new THREE.Vector3());
   center.x += size.x * 0.16; // keep the model clear of the right-hand control panel
   const radius = Math.max(size.x, size.y, size.z, 10) * 0.62;
-  const dist = radius / Math.tan((camera.fov * Math.PI) / 360);
+  const dist = radius / Math.tan((camera.fov * Math.PI) / 360) / Math.min(1, camera.aspect);
   controls.target.copy(center);
   camera.position.set(center.x, center.y - dist * 0.82, center.z + dist * 0.72);
   camera.near = dist / 50;
@@ -99,7 +99,7 @@ export function setPartColors(colors) {
 window.__camTop = () => {
   const box = new THREE.Box3().setFromObject(group);
   const c = box.getCenter(new THREE.Vector3());
-  const h = Math.max(box.getSize(new THREE.Vector3()).x, 30) * 1.15;
+  const h = (Math.max(box.getSize(new THREE.Vector3()).x, 30) * 1.15) / Math.min(1, camera.aspect);
   controls.target.copy(c);
   camera.position.set(c.x, c.y, h);
   camera.updateProjectionMatrix();

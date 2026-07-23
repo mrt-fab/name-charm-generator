@@ -62,6 +62,39 @@ function ovalRing(cx, cy, L, W, w) {
 const annulus = (cx, cy, rOut, wall) =>
   G.diff(G.circle(cx, cy, rOut), G.circle(cx, cy, rOut - wall));
 
+const rect = (x0, y0, x1, y1) => [[
+  { X: G.mm(x0), Y: G.mm(y0) }, { X: G.mm(x1), Y: G.mm(y0) },
+  { X: G.mm(x1), Y: G.mm(y1) }, { X: G.mm(x0), Y: G.mm(y1) },
+]];
+
+// Openable snap ring (after the reference pendant): a C-ring whose two ends carry
+// interlocking J-hooks. Printed engaged with 0.3mm clearance; flexing the ring
+// slightly oval slides the hooks apart to open it. One piece, full height.
+// Returns { paths } — the closure is at the TOP of the ring; attach chain on the right.
+function snapRingPaths(cx, cy) {
+  const rOut = 10, wall = 2.5;
+  const rMid = rOut - wall / 2; // 8.75
+  const ring = annulus(cx, cy, rOut, wall);
+  // local closure frame: origin at top of ring (cx, cy + rMid), x = tangent, y = radial-out
+  const ox = cx, oy = cy + rMid;
+  const L = (x0, y0, x1, y1) => rect(ox + x0, oy + y0, ox + x1, oy + y1);
+  const cut = L(-3.4, -2.8, 3.4, 2.8);
+  // hook A grows from the LEFT ring end: anchor block (tall — bridges the ring's
+  // curvature drop at the junction) + top arm + downward tooth
+  const hookA = [
+    ...L(-4.8, -2.2, -2.8, 1.8),  // anchor into the left ring end
+    ...L(-3.0, 0.8, 1.4, 1.8),    // arm along the top
+    ...L(0.6, -0.5, 1.4, 1.8),    // tooth reaching down past center
+  ];
+  // hook B = A rotated 180° about the closure center (grows from the RIGHT ring end)
+  const hookB = [
+    ...L(2.8, -1.8, 4.8, 2.2),    // anchor into the right ring end
+    ...L(-1.4, -1.8, 3.0, -0.8),  // arm along the bottom
+    ...L(-1.4, -1.8, -0.6, 0.5),  // tooth reaching up
+  ];
+  return G.clean(G.unionAll([...G.diff(ring, cut), ...hookA, ...hookB]));
+}
+
 // Oval loop tab merged into the first character (also the anchor for chain/rings).
 // Hole ≈ 6.6×4.6mm for straps / metal rings.
 export function addLoopTab(shape, bbox, T, d) {
@@ -111,7 +144,14 @@ export function buildChain(firstShape, loop, T, d, linkCount, endType) {
     prevShape = shape; prevPaths = mid; prevLeftX = cx - L / 2;
   }
 
-  if (endType === 'ring' || endType === 'doublering') {
+  if (endType === 'snapring') {
+    const rOut = 10, P = 7.0;
+    const cx = prevLeftX + P - rOut;
+    const paths = snapRingPaths(cx, cy);
+    const shape = makeShape(paths);
+    weave(shape, paths, prevShape, prevPaths, d, 'y', cy);
+    shapes.push(shape);
+  } else if (endType === 'ring' || endType === 'doublering') {
     const dbl = endType === 'doublering';
     const rOut = dbl ? 10 : 9, wall = 2.5, P = dbl ? 6.5 : (linkCount ? 6.5 : 7.0);
     const cx = prevLeftX + P - rOut;
