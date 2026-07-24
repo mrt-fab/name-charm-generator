@@ -5,7 +5,7 @@
 import { FONT_DEFS, allFontDefs, userFonts, addUserFont, removeUserFont } from './font.js';
 import { saveUserFont, loadUserFonts, deleteUserFont } from './fontstore.js';
 import { writeSTL, zipStore, download } from './export.js';
-import { initPreview, setParts, setPartColors, setSectionZ, setDimmed } from './preview.js';
+import { initPreview, setParts, setPartColors, setSectionZ, setDimmed, setView } from './preview.js';
 import './validate.js';
 
 const state = {
@@ -47,6 +47,8 @@ let latestSent = 0;
 let lastResult = null;   // { colors: Float32Array[], stats }
 let regenTimer = null;
 let progressTimer = null;
+let lastFitW = 0;
+let wiggleNext = true;   // first render + each text confirm shows the joint wiggle
 
 function requestGenerate() {
   const id = ++genSeq;
@@ -92,7 +94,13 @@ worker.onmessage = (e) => {
     return;
   }
   lastResult = msg;
-  setParts(msg.colors.map((tris, i) => ({ color: state.colors[i], tris })));
+  // refit the camera only when the model's footprint changed meaningfully (keeps the
+  // view stable while dragging sliders); wiggle only on freshly confirmed text
+  const w = msg.stats.widthMm || 0;
+  const refit = !lastFitW || Math.abs(w - lastFitW) / lastFitW > 0.08;
+  if (refit) lastFitW = w;
+  setParts(msg, state.colors, { fit: refit, wiggle: wiggleNext });
+  wiggleNext = false;
   updateWarnings(msg.stats.missing || []);
   updateStats(msg.stats);
   updateButtons();
@@ -269,6 +277,7 @@ function updateButtons() {
 
 function confirmText() {
   state.text = draftText;
+  wiggleNext = true;
   updateButtons();
   requestGenerate();
 }
@@ -392,6 +401,10 @@ function init() {
   const applySection = () => setSectionZ($('sectionOn').checked ? +$('sectionZ').value : null);
   $('sectionOn').addEventListener('change', applySection);
   $('sectionZ').addEventListener('input', applySection);
+
+  document.querySelectorAll('#viewBar button').forEach((b) => {
+    b.addEventListener('click', () => setView(b.dataset.view));
+  });
 
   updateButtons();
 }
