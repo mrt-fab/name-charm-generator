@@ -3,32 +3,32 @@
 import * as G from './geom.js';
 import { charSolid } from './glyph2d.js';
 
-// Bar-and-tunnel joint dimensions (mm) — the reference-photo mechanism. Every part
-// sits on the bed: A's bar (with a flared tip) runs along the text axis through a
-// tunnel in B's socket wall and is captured inside a pocket cavity behind it.
+// Interlocked-ring joint dimensions (mm) — user-approved v6 design, dimensioned at
+// T=10 and scaled by s = clamp(T/10, 0.72, 1.2). z-placement anchors on the tail
+// ring: its top clears the letter's top face by 0.3mm, and the head plate (whose far
+// rim is the bar) is centered on the ring so the bar sits in the middle of the hole.
 export function jointDims(letterH, T, cxy, cz) {
-  const hRod = Math.min(3.0, Math.max(1.6, 0.3 * T));        // bar height (z 0..hRod)
-  const wRod = Math.min(3.0, Math.max(2.2, 0.14 * letterH)); // bar width (Y)
-  const wallX = 2.2;                 // tunnel wall thickness along the text axis
-  const flare = 1.4;                 // flare widening per side (pull-out capture)
-  const flareL = 2.2;                // flare length along the text axis
-  const sideRoom = 0.9;              // pocket side room around the flare (swing)
-  const wFlare = wRod + 2 * flare;
-  const pocketY = wFlare + 2 * sideRoom;
-  const pocketX = flareL + 1.8;      // travel + swing room behind the wall
-  const hPocket = hRod + 0.6;        // flare's vertical play inside the pocket
-  const ceil = 1.4;                  // solid roof above the pocket
-  const sideWall = 1.8;              // socket block side walls
-  const relief = 0.4;                // z range of elephant-foot relief at the bottom
-  return { hRod, wRod, wallX, flare, wFlare, flareL, pocketY, pocketX, hPocket,
-           ceil, sideWall, relief, cxy, cz, T,
-           minSpan: wallX + pocketX + 4.0 };
+  const s = Math.min(1.2, Math.max(0.72, T / 10));
+  const Ro = 3.6 * s;                 // tail ring outer radius
+  const Rh = 2.0 * s;                 // tail ring hole radius
+  const tY = 2.6 * s;                 // tail ring thickness along Y
+  const zc = Math.max(Ro + 0.4, Math.min(0.61 * T, T - 0.3 - Ro));
+  const plate0 = zc - 1.2 * s;        // head plate z-range (bar cross 1.8s × 2.4s)
+  const plate1 = zc + 1.2 * s;
+  const taper1 = Math.min(T - 0.3, plate1 + 2.0 * s);
+  const corbelRate = 1.38;            // ~54° corbel out of the wall
+  const corbel0 = Math.max(0.3, plate0 - (5.95 * s + 3.0) / corbelRate);
+  const clip0 = Math.max(0.2, zc - Ro - 1.3); // ring underside taper start
+  return { s, Ro, Rh, tY, zc, plate0, plate1, taper1, corbel0, corbelRate, clip0,
+           slotX: 1.4 * s, slotY: 4.6 * s, slotZ0: plate0 - 0.55 * s, slotZ1: plate1 + 0.55 * s,
+           g: 5.6 * s, cxy, cz, T,
+           minSpan: 9.0 * s };
 }
 
 // chars: array of characters (spaces allowed). Returns null-solid entries dropped with warnings.
 // → { placed: [{ch, paths, bbox}], joints: [{left,right,C:{x,y}mm}], missing: [ch], widthMm }
 export function layoutString(text, fontId, letterH, dilate, dims) {
-  const baseGap = Math.max(2.0, 2.4 * Math.min(2.5, Math.max(0.7, letterH / 20)));
+  const baseGap = dims.g; // wall-to-wall gap is dictated by the interlock geometry
   const spaceW = letterH * 0.35;
 
   // build solids, remember spaces as extra gap markers
