@@ -115,33 +115,45 @@ let progressTimer = null;
 let lastFitW = 0;
 let wiggleNext = true;
 
+function buildParams() {
+  return {
+    fontId: state.fontId,
+    letterH: state.sizeMm,
+    thickness: thicknessMm(),
+    dilate: state.dilate,
+    colorCount: state.colorCount,
+    colorCuts: colorCuts(),
+    clearance: state.clearance,
+    cz: state.cz,
+    jointPct: state.jointPct,
+    swingDeg: state.swingDeg,
+    loop: state.loop,
+    chainLinks: state.chainLinks,
+    endHw: state.endHw,
+    kataAuto: state.kataAuto,
+  };
+}
+
 function requestGenerate() {
   const id = ++genSeq;
   latestSent = id;
-  worker.postMessage({
-    type: 'generate', id,
-    text: state.text,
-    params: {
-      fontId: state.fontId,
-      letterH: state.sizeMm,
-      thickness: thicknessMm(),
-      dilate: state.dilate,
-      colorCount: state.colorCount,
-      colorCuts: colorCuts(),
-      clearance: state.clearance,
-      cz: state.cz,
-      jointPct: state.jointPct,
-      swingDeg: state.swingDeg,
-      loop: state.loop,
-      chainLinks: state.chainLinks,
-      endHw: state.endHw,
-      kataAuto: state.kataAuto,
-    },
-  });
+  worker.postMessage({ type: 'generate', id, text: state.text, params: buildParams() });
   setDimmed(true);
   clearTimeout(progressTimer);
   progressTimer = setTimeout(() => $('genProgress').classList.add('show'), 500);
   syncHash();
+}
+
+// welded (watertight) build for STL export — heavier, so it runs on demand only
+let exportSeq = 0;
+const exportWaiters = new Map();
+
+function requestWeldedBuild() {
+  return new Promise((resolve, reject) => {
+    const id = ++exportSeq;
+    exportWaiters.set(id, { resolve, reject });
+    worker.postMessage({ type: 'export', id, text: state.text, params: buildParams() });
+  });
 }
 
 function scheduleGenerate() {
@@ -152,6 +164,14 @@ function scheduleGenerate() {
 worker.onmessage = (e) => {
   const msg = e.data;
   if (msg.type === 'fontinfo') { onFontInfo(msg); return; }
+  if (msg.type === 'exported') {
+    const w = exportWaiters.get(msg.id);
+    if (w) {
+      exportWaiters.delete(msg.id);
+      if (msg.error) w.reject(new Error(msg.error)); else w.resolve(msg);
+    }
+    return;
+  }
   if (msg.id !== latestSent) return; // stale — a newer request is in flight
   clearTimeout(progressTimer);
   $('genProgress').classList.remove('show');
@@ -170,10 +190,25 @@ worker.onmessage = (e) => {
 
 // ---------- export / share ----------
 
-function doExport() {
+async function doExport() {
   if (!lastResult || !lastResult.colors.length) return;
   const name = state.text.replace(/[^\wぁ-ゖァ-ヶー一-龠]/g, '') || 'charm';
-  const byColor = lastResult.colors;
+  const btn = $('exportBtn');
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = '書き出し中…';
+  let byColor;
+  try {
+    // welded watertight meshes — the preview's stacked shells break slicer repair
+    byColor = (await requestWeldedBuild()).colors;
+  } catch (err) {
+    console.error('export error:', err);
+    btn.textContent = prevLabel;
+    btn.disabled = false;
+    return;
+  }
+  btn.textContent = prevLabel;
+  btn.disabled = false;
   if (byColor.length === 1) {
     download(new Blob([writeSTL(byColor[0])]), `${name}.stl`);
     flashBtn('exportBtn', '✓ ダウンロードしました');

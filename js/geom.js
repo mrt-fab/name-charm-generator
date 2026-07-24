@@ -10,6 +10,10 @@ export const toMm = (v) => v / SCALE;
 function execute(clipType, subj, clip) {
   const c = new C.Clipper();
   c.StrictlySimple = true; // split self-touching outputs (pixel fonts corner-touch)
+  // keep collinear vertices: mesh welding (stackTris XOR caps) pairs cap-boundary
+  // edges against wall edges by exact vertices — dropping collinear points there
+  // would leave hairline T-junction cracks at every slab interface
+  c.PreserveCollinear = true;
   if (subj.length) c.AddPaths(subj, C.PolyType.ptSubject, true);
   if (clip && clip.length) c.AddPaths(clip, C.PolyType.ptClip, true);
   const out = new C.Paths();

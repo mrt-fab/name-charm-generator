@@ -18,7 +18,7 @@ import { FONT_DEFS, loadFont, registerFont, isLoaded, getFont, hasGlyph, hiraToK
 import { layoutString, jointDims } from './layout.js';
 import { makeShape, buildJoint } from './joint.js';
 import { buildSlabs } from './slabs.js';
-import { slabsToTris } from './mesh.js';
+import { slabsToTris, stackTris } from './mesh.js';
 import { addLoopTab, buildChain } from './hardware.js';
 
 let busy = false;
@@ -41,6 +41,12 @@ self.onmessage = (e) => {
     pendingGen = msg;
     pump();
   }
+  if (msg.type === 'export') {
+    // welded meshing is heavier (~1s); run it on demand only, outside the live queue
+    generate(msg.text, msg.params, true)
+      .then((out) => postMessage({ type: 'exported', id: msg.id, ...out.payload }, out.transfers))
+      .catch((err) => postMessage({ type: 'exported', id: msg.id, error: err.message || String(err) }));
+  }
 };
 
 async function pump() {
@@ -61,7 +67,10 @@ async function pump() {
   busy = false;
 }
 
-async function generate(text, p) {
+// weld=false: fast per-slab shells for the live preview (coincident interface caps
+// are invisible there). weld=true: stackTris welds each piece into one watertight
+// mesh — required for STL export, where slicer auto-repair chokes on stacked shells.
+async function generate(text, p, weld = false) {
   const def = FONT_DEFS.find((f) => f.id === p.fontId);
   if (def && !isLoaded(def.id)) await loadFont(def);
   if (!isLoaded(p.fontId)) throw new Error('フォント未登録: ' + p.fontId);
@@ -104,9 +113,12 @@ async function generate(text, p) {
   let zMax = 0;
   for (let pi = 0; pi < all.length; pi++) {
     const ranges = [];
-    for (const slab of buildSlabs(all[pi], all[pi].zTop ?? T, p.colorCuts)) {
+    const slabs = buildSlabs(all[pi], all[pi].zTop ?? T, p.colorCuts);
+    const perSlab = weld ? stackTris(slabs)
+                         : slabs.map((slab) => slabsToTris([slab]).tris);
+    for (let si = 0; si < slabs.length; si++) {
+      const slab = slabs[si], tris = perSlab[si];
       const ci = Math.min(slab.colorIdx, nC - 1);
-      const { tris } = slabsToTris([slab]);
       ranges.push({ color: ci, start: colorArrays[ci].length, count: tris.length });
       for (let k = 0; k < tris.length; k++) colorArrays[ci].push(tris[k]);
       zMax = Math.max(zMax, slab.z1);
