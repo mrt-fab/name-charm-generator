@@ -20,7 +20,7 @@ const state = {
   colors: ['#4f86d6', '#f5f2ec', '#f0a8bf'],
   clearance: 0.4,
   cz: 0.2,
-  topOff: 1.0,
+  jointPct: 65,
   swingDeg: 40,
   loop: 'loop',
   chainLinks: 0,
@@ -68,7 +68,7 @@ function encodeHash() {
   p.set('c', state.colors.map((c) => c.replace('#', '')).join('.'));
   p.set('b', state.bandMm.map((b) => b.toFixed(1)).join('.'));
   p.set('cl', state.clearance);
-  p.set('to', state.topOff);
+  p.set('jh', state.jointPct);
   p.set('lp', state.loop === 'loop' ? 1 : 0);
   p.set('ch', state.chainLinks);
   p.set('hw', HW_CODE[state.endHw] ?? 0);
@@ -97,7 +97,7 @@ function decodeHash() {
     }
     if (p.get('b')) p.get('b').split('.').forEach((b, i) => { if (i < 2 && +b > 0) state.bandMm[i] = +b; });
     if (p.get('cl')) state.clearance = [0.3, 0.4, 0.5].includes(+p.get('cl')) ? +p.get('cl') : 0.4;
-    if (p.get('to') != null && p.get('to') !== '') state.topOff = Math.min(2, Math.max(0, +p.get('to') || 0));
+    if (p.get('jh')) state.jointPct = Math.min(100, Math.max(40, +p.get('jh') || 65));
     if (p.get('lp') != null) state.loop = p.get('lp') === '0' ? 'none' : 'loop';
     if (p.get('ch')) state.chainLinks = Math.min(12, Math.max(0, +p.get('ch')));
     if (p.get('hw')) state.endHw = HW_DECODE[+p.get('hw')] || 'none';
@@ -130,7 +130,7 @@ function requestGenerate() {
       colorCuts: colorCuts(),
       clearance: state.clearance,
       cz: state.cz,
-      topOff: state.topOff,
+      jointPct: state.jointPct,
       swingDeg: state.swingDeg,
       loop: state.loop,
       chainLinks: state.chainLinks,
@@ -494,11 +494,11 @@ function syncControls() {
   $('sizeMm').value = state.sizeMm; $('sizeOut').textContent = state.sizeMm + 'mm';
   $('thickPct').value = state.thickPct;
   $('dilate').value = state.dilate; $('dilateOut').textContent = state.dilate.toFixed(2) + 'mm';
-  $('topOff').value = state.topOff; $('topOffOut').textContent = state.topOff.toFixed(1) + 'mm';
+  $('jointPct').value = state.jointPct; $('jointPctOut').textContent = state.jointPct + '%';
   $('chainLinks').value = state.chainLinks;
   $('chainOut').textContent = state.chainLinks === 0 ? 'なし' : state.chainLinks + 'リンク';
   $('thickMm').value = state.thickMmOverride ?? '';
-  ['sizeMm', 'thickPct', 'dilate', 'topOff', 'chainLinks'].forEach((id) => fillTrack($(id)));
+  ['sizeMm', 'thickPct', 'dilate', 'jointPct', 'chainLinks'].forEach((id) => fillTrack($(id)));
   setSeg('colorSeg', state.colorCount);
   setSeg('clearSeg', state.clearance);
   setSeg('loopSeg', state.loop);
@@ -548,7 +548,7 @@ function init() {
   });
   bindSeg('colorSeg', (v) => { state.colorCount = +v; buildBandRows(); scheduleGenerate(); });
   bindSeg('clearSeg', (v) => { state.clearance = +v; scheduleGenerate(); });
-  bindRange('topOff', 'topOffOut', (v) => v.toFixed(1) + 'mm', (v) => (state.topOff = v));
+  bindRange('jointPct', 'jointPctOut', (v) => v + '%', (v) => (state.jointPct = v));
   bindSeg('loopSeg', (v) => { state.loop = v; scheduleGenerate(); });
   bindSeg('endSeg', (v) => { state.endHw = v; scheduleGenerate(); });
   bindRange('chainLinks', 'chainOut', (v) => (v === 0 ? 'なし' : v + 'リンク'), (v) => (state.chainLinks = v));

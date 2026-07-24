@@ -34,19 +34,22 @@ export function anchorCapsule(paths, edgeXmm, y, targetX, targetY, w) {
 
 // Build one joint: knob on A's right side, socket on B's left side.
 // Mutates shapeA / shapeB. C in mm.
-// d.T is the joint's EFFECTIVE height: the letters may be taller (piece zTop > d.T),
-// in which case every joint feature stays below d.T and the letter tops read clean
-// (reference look: the connection sits offset下 from the top face).
+// d.T is the joint's EFFECTIVE height and d.z0 its bottom offset: the letters may be
+// taller (piece zTop > z0+T), so the top face reads as pure letter shapes, and the
+// bottom offset is bridged by a 45° chamfer (staircase bands shrinking toward the
+// bed) so shaft and pad land on small feet — no overhang, reference look both sides.
 export function buildJoint(shapeA, Abbox, shapeB, Bbbox, C, d) {
   const { discR, shaftR, cavR, holeR, padR, armW, lipH, relief, cxy, T } = d;
-  const zCav0 = lipH, zCav1 = T - lipH;
-  const zDisc0 = lipH + d.cz, zDisc1 = T - lipH - d.cz;
+  const z0 = d.z0 ?? 0;
+  const zTopJ = z0 + T;
+  const zCav0 = z0 + lipH, zCav1 = zTopJ - lipH;
+  const zDisc0 = zCav0 + d.cz, zDisc1 = zCav1 - d.cz;
 
   // --- knob (A) ---
   const aEdge = G.toMm(Abbox.maxX);
   const glyphA = shapeA.base[0];
   const arm = anchorCapsule(glyphA, aEdge, C.y, C.x, C.y, armW);
-  shapeA.bandAdds.push({ z0: 0, z1: T, paths: G.circle(C.x, C.y, shaftR) }); // shaft
+  shapeA.bandAdds.push({ z0, z1: zTopJ, paths: G.circle(C.x, C.y, shaftR) }); // shaft
   shapeA.bandAdds.push({ z0: zDisc0, z1: zDisc1, paths: [...G.circle(C.x, C.y, discR), ...arm] });
 
   // --- socket (B) ---
@@ -56,11 +59,24 @@ export function buildJoint(shapeA, Abbox, shapeB, Bbbox, C, d) {
   const padLink = anchorCapsule(glyphB, bEdge, C.y, C.x, C.y, Math.min(padR, armW * 1.6));
   // keep clearance to A's glyph body (pad reaches into A's territory)
   const pad = G.diff(G.unionAll([...padCore, ...padLink]), G.offset(glyphA, cxy));
-  shapeB.bandAdds.push({ z0: 0, z1: T, paths: pad });
+  shapeB.bandAdds.push({ z0, z1: zTopJ, paths: pad });
+
+  // 45° bottom chamfer: both parts shrink stepwise down to small bed feet
+  if (z0 > 1e-9) {
+    const step = 0.25;
+    for (let zb = 0; zb < z0 - 1e-9; zb += step) {
+      const zt = Math.min(zb + step, z0);
+      const shrink = z0 - (zb + zt) / 2;
+      const footShaft = Math.max(0.8, shaftR - shrink);
+      shapeA.bandAdds.push({ z0: zb, z1: zt, paths: G.circle(C.x, C.y, footShaft) });
+      const padFoot = G.offset(pad, -shrink);
+      if (padFoot.length) shapeB.bandAdds.push({ z0: zb, z1: zt, paths: padFoot });
+    }
+  }
 
   // lip holes (shaft passage) + elephant-foot relief + cavity with swing slot
   shapeB.bandSubs.push({ z0: 0, z1: zCav0, paths: G.circle(C.x, C.y, holeR) });
-  shapeB.bandSubs.push({ z0: zCav1, z1: T, paths: G.circle(C.x, C.y, holeR) });
+  shapeB.bandSubs.push({ z0: zCav1, z1: zTopJ, paths: G.circle(C.x, C.y, holeR) });
   shapeB.bandSubs.push({ z0: 0, z1: relief, paths: G.circle(C.x, C.y, holeR + 0.15) });
 
   const slot = [];
