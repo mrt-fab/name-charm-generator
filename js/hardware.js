@@ -16,9 +16,10 @@
 // Every hardware piece carries its own zTop (thickness) independent of the letters.
 
 import * as G from './geom.js';
-import { anchorCapsule } from './joint.js';
+import { anchorCapsule, buildTail, buildHead, rect } from './joint.js';
 import { sphereChainBands, ovalLinkPath, minPointDist } from './wire3d.js';
-import { SNAP_RING, CARABINER } from './hw_templates.js';
+import { SNAP_RING } from './hw_templates.js';
+import { CARB_H, CARB_FRAME, CARB_GATE, CARB_KNOB } from './hw_carabiner_full.js';
 
 function ovalRing(cx, cy, L, W, w) {
   const hl = L / 2 - W / 2;
@@ -66,36 +67,18 @@ function linkPath(cx, cy, sign) {
 
 // ---- public API -------------------------------------------------------------
 
-// Loop = STANDING ring (torus in the YZ plane, hole axis along the text direction),
-// like the reference photo — the hole is perpendicular to the print layers, so a
-// metal 丸カン / key ring threads it the natural way. Built with the sphere-chain
-// sweep (a wire circle in the YZ plane), resting on the bed; a low stub ties its
-// bottom tube into the first letter's flank.
-//
-// The printed chain cannot thread the standing hole itself: the hole bottom sits a
-// tube-diameter above the bed while chain links print ON the bed, and a link's
-// return strand can't clear the ring's outside either — so with a chain enabled,
-// buildChain hangs the first link off a flat eyelet fused under the ring's base
-// (visually the chain flows straight out of the ring's foot).
+// Loop = the first letter's standard TAIL RING (the v6 interlock ring, XZ plane,
+// hole axis Y, Ø4·s) — 「1文字目の左端はそのまま残し」. Doubles as the 丸カン /
+// key-ring hole. With a printed chain, buildChain inserts a small ADAPTER piece
+// whose right side carries a v6 HEAD interlocking this ring (a bed-lying link can
+// never encircle a wall-standing ring directly — the bed blocks the underside — so
+// the chain reaches the ring through the adapter: last link wraps the adapter's
+// flat eyelet, the adapter's head links the ring).
 export function addLoopTab(shape, bbox, T, d) {
-  const rt = 1.05;                 // tube radius (Ø2.1)
-  const holeR = 2.6;               // hole radius (Ø5.2, 丸カン-friendly)
-  const Rc = holeR + rt;           // wire centerline radius
-  const zc = Rc + rt;              // ring rests on the bed
   const cy = G.toMm((bbox.minY + bbox.maxY) / 2);
   const edge = G.toMm(bbox.minX);
-  const rx = edge - 1.6 - rt;      // ring wall center, clear of the letter flank
-  const pts = [];
-  const nSeg = 72;
-  for (let i = 0; i <= nSeg; i++) {
-    const a = (i / nSeg) * Math.PI * 2;
-    pts.push({ x: rx, y: cy + Rc * Math.cos(a), z: zc + Rc * Math.sin(a) });
-  }
-  for (const b of sphereChainBands(pts, rt, 0.25)) shape.bandAdds.push(b);
-  // bed-level stub: covers under the tube bottom (bed foot) and ties into the letter
-  const stub = anchorCapsule(shape.base[0], edge, cy, rx - 1.0, cy, 2.6);
-  shape.bandAdds.push({ z0: 0, z1: 2.4, paths: stub });
-  return { rx, cy, rt, Rc, zc, leftX: rx, footprint: null };
+  buildTail(shape, shape.base[0], edge, cy, d, true);
+  return { rx: edge, cy, leftX: edge - d.Ro };
 }
 
 // Chain + end hardware. Returns extra piece shapes (each with its own zTop).
@@ -106,15 +89,24 @@ export function buildChain(firstShape, loop, T, d, linkCount, endType) {
   if (linkCount === 0 && endType === 'none') return shapes;
   const n = Math.max(linkCount, endType !== 'none' ? 2 : 0); // end hardware needs ≥2 links
 
-  // flat eyelet fused under the standing ring's base (loop.leftX = ring wall
-  // center, so the eyelet's right end overlaps the tube bottom); the first link
-  // wraps its bar — the chain flows straight out of the ring's foot
-  const eye = addEyelet(firstShape, loop.leftX, cy, -1);
+  // adapter piece: its right side carries a v6 HEAD interlocking the first letter's
+  // tail ring; its left side is the proven flat eyelet the first link wraps
+  const s = d.s;
+  const ax1 = loop.rx - d.g;               // adapter wall facing the letter's ring
+  const ax0 = ax1 - 3.4;
+  const aw = 4.2 * s;
+  const adapter = {
+    base: [rect(ax0, cy - aw, ax1, cy + aw)],
+    bandAdds: [], bandSubs: [], zTop: d.taper1,
+  };
+  buildHead(adapter, ax1, loop.rx, cy, d);
+  const eye = addEyelet(adapter, ax0, cy, -1);
+  shapes.push(adapter);
 
   const hl = CHAIN.Lc / 2 - CHAIN.Wc / 2;
   const paths3d = [];
 
-  let cx = eye.barX - hl - 0.4; // first link's right cap wraps the eyelet bar
+  let cx = eye.barX - hl - 0.4; // first link's right cap wraps the adapter's eyelet bar
   for (let k = 0; k < n; k++) {
     const pts = linkPath(cx, cy, k % 2 === 0 ? 1 : -1);
     paths3d.push(pts);
@@ -171,208 +163,36 @@ function buildSnapRing(edgeX, cy) {
   return shape;
 }
 
-// ---- carabiner (traced body/gate + captured-disc pivot + separate screw knob) ----
+// ---- carabiner (full-fidelity banded copy of the reference model) -----------
+//
+// The frame, print-in-place gate (pivot + printed spring + gate-axis screw thread)
+// and the separately-printed knurled knob are traced band-by-band from the source
+// STLs at full scale (scripts/trace_carabiner_full.py) — the proven mechanism is
+// reproduced as-is instead of re-modeled. Source publication permits reproduction
+// (confirmed by the user). Orientation: source spine (y) rotated -90 deg so it lies
+// along the chain axis; the y-max end (the spine bend) lands at the chain eyelet.
 
-function loopBBox(loop) {
-  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
-  for (const [x, y] of loop) {
-    if (x < x0) x0 = x; if (x > x1) x1 = x;
-    if (y < y0) y0 = y; if (y > y1) y1 = y;
+function bandsToShape(obj, cx, cy, rot) {
+  const cos = Math.cos(rot), sin = Math.sin(rot);
+  const shape = { base: [], bandAdds: [], bandSubs: [], zTop: obj.h };
+  for (const b of obj.bands) {
+    if (!b.loops.length) continue;
+    const paths = b.loops.map((loop) => loop.map(([x, y]) => ({
+      X: G.mm(cx + (x * cos - y * sin)), Y: G.mm(cy + (x * sin + y * cos)),
+    })));
+    shape.bandAdds.push({ z0: b.z0, z1: b.z1, paths: G.normalizeEvenOdd(paths) });
   }
-  return { x0, y0, x1, y1 };
+  return shape;
 }
 
-// Straight in-plane rod (horizontal cylinder) along an axis a ↦ P(a), as Z bands:
-// per band the section is a capsule of half-width √(r²−dz²) — exact, and printable
-// when r ≈ T/2 (the bottom touches the bed; a thin keel widens the first layers).
-// Material spans exactly [aFrom, aTo] at mid-height; each end is spherical unless
-// flagged flat (a straight cut at the given a for every z — used to keep a fixed
-// clearance to neighbouring parts).
-function rodBands(P, aFrom, aTo, r, zc, { flatFrom = false, flatTo = false, hs = 0.25 } = {}) {
-  const bands = [];
-  const z0r = Math.max(0, zc - r), z1r = zc + r;
-  for (let z = Math.floor(z0r / hs) * hs; z < z1r - 1e-9; z += hs) {
-    const z0 = Math.max(z, 0), z1 = Math.min(z + hs, z1r);
-    if (z1 - z0 < 1e-6) continue;
-    const dz = Math.abs((z0 + z1) / 2 - zc);
-    if (dz >= r) continue;
-    const w = 2 * Math.sqrt(r * r - dz * dz);
-    if (w < 0.24) continue;
-    const c1 = flatFrom ? aFrom + w / 2 : aFrom + r;
-    const c2 = flatTo ? aTo - w / 2 : aTo - r;
-    if (c2 <= c1) continue;
-    const p1 = P(c1), p2 = P(c2);
-    bands.push({ z0, z1, paths: G.capsule(p1.x, p1.y, p2.x, p2.y, w) });
-  }
-  return bands;
-}
-
-export function buildCarabiner(edgeX, cy, d) {
-  const { cxy, cz } = d;
-  const s = 0.8;                               // screw physics set the minimum scale
-  const T = 4.0;                               // carabiner's own thickness
-  const lipH = 1.1;
-  const bodyLoop = [CARABINER.loops[0]];
-  const gateLoop = [CARABINER.loops[1]];
-  const pin = CARABINER.loops[2];
-  const pinC = {
-    x: pin.reduce((a, p) => a + p[0], 0) / pin.length,
-    y: pin.reduce((a, p) => a + p[1], 0) / pin.length,
-  };
-
-  const W = CARABINER.w * s, H = CARABINER.h * s;
-  // hang horizontally: spine (template +y) points toward the chain (+x) → rotate -90°
-  const rot = -Math.PI / 2;
-  const cxB = edgeX + 0.6 - H / 2;             // rotated: template height lies along x
-
-  const place = (loops, extra = 0) => {
-    let p = templatePaths(loops, s, cxB, cy, rot);
-    return extra ? G.offset(p, extra) : p;
-  };
-  const rotP = (p) => ({
-    x: cxB + (p.x * Math.cos(rot) - p.y * Math.sin(rot)) * s,
-    y: cy + (p.x * Math.sin(rot) + p.y * Math.cos(rot)) * s,
-  });
-
-  const bodyPaths = place(bodyLoop);
-  const gatePaths = place(gateLoop, -0.08);    // extra print-in-place clearance
-  const Pv = rotP(pinC);                       // pivot center (world)
-
-  // ---- screw axis: pivot → gate tip, continuing into the body nose ----
-  const gl = CARABINER.loops[1];
-  const gb = loopBBox(gl);
-  const topPts = gl.filter(([, y]) => y > gb.y1 - 2);
-  const tipT = rotP({
-    x: topPts.reduce((a, p) => a + p[0], 0) / topPts.length,
-    y: gb.y1,
-  });
-  const L = Math.hypot(tipT.x - Pv.x, tipT.y - Pv.y);
-  const u = { x: (tipT.x - Pv.x) / L, y: (tipT.y - Pv.y) / L };
-  const P = (a) => ({ x: Pv.x + u.x * a, y: Pv.y + u.y * a });
-
-  // Screw parametrics (all mm, world). The core is a ROUND rod of r ≈ T/2 — like the
-  // reference, its cross-section is a circle barely clipped by the slab's flat
-  // top/bottom, so the sleeve can rotate around it AND it prints flat on the bed.
-  const SCREW = {
-    rodR: 1.85,          // gate-tip / nose post radius (sleeve-passable)
-    wireR: 0.5,          // male thread wire radius
-    orbit: 2.15,         // helix centerline radius
-    pitch: 2.0,
-    boreR: 2.25,         // sleeve bore (clears post 1.85 by 0.4)
-    rootR: 3.00,         // sleeve thread root (clears male crest ~2.65 by 0.35)
-    lobeW: 1.7,          // sleeve groove width
-    sleeveL: 6.0,
-    knurlR: 3.7, knurlAmp: 0.2, knurlN: 12,
-  };
-  const axisN = { x: -u.y, y: u.x };
-  const noseGap = 0.4;
-  const gPost0 = Math.max(6.5, L - 4.8);       // gate arm stays SOLID before this
-  const thr0 = gPost0 + 0.5, thr1 = L - 0.7;   // thread on the gate post
-  const nPost1 = L + 4.4;                       // nose round post end (sleeve-passable)
-  const tongue0 = L + 3.2, tongue1 = L + 7.4;   // solid nose tongue → hook root (strength)
-
-  // Only the sleeve barrel needs frame clearance — carve a snug channel over its
-  // travel and NOTHING else, so both the gate arm and the nose tongue stay solid.
-  const carve = (from, to, r) => {
-    const p1 = P(from), p2 = P(to);
-    return G.capsule(p1.x, p1.y, p2.x, p2.y, 2 * r);
-  };
-  const corridor = carve(gPost0 - 0.4, nPost1 - 0.2, SCREW.knurlR + 0.2);
-
-  // ---- body: traced outline (barrel channel carved) + pivot pad + solid nose ----
-  const discR = 2.4, shaftR = 1.5;
-  const tA = P(tongue0), tB = P(tongue1);
-  const body = {
-    base: [G.unionAll([
-      ...G.diff(bodyPaths, corridor),
-      ...G.circle(Pv.x, Pv.y, discR + cxy + 1.5),
-      ...G.capsule(tA.x, tA.y, tB.x, tB.y, 3.4),   // SOLID full-height nose tongue
-    ])],
-    bandAdds: [], bandSubs: [], zTop: T,
-  };
-  body.bandSubs.push({ z0: 0, z1: lipH, paths: G.circle(Pv.x, Pv.y, shaftR + cxy) });
-  body.bandSubs.push({ z0: T - lipH, z1: T, paths: G.circle(Pv.x, Pv.y, shaftR + cxy) });
-  body.bandSubs.push({ z0: 0, z1: 0.4, paths: G.circle(Pv.x, Pv.y, shaftR + cxy + 0.15) });
-  const gateMid = rotP({ x: (gb.x0 + gb.x1) / 2, y: (gb.y0 + gb.y1) / 2 });
-  const aArm = Math.atan2(gateMid.y - Pv.y, gateMid.x - Pv.x);
-  const slot = [];
-  for (let k = 0; k <= 5; k++) {
-    const th = aArm + (k / 5) * (55 * Math.PI / 180);
-    slot.push(...G.capsule(Pv.x, Pv.y, Pv.x + 6.5 * Math.cos(th), Pv.y + 6.5 * Math.sin(th), 3.0 + 2 * cxy));
-  }
-  body.bandSubs.push({ z0: lipH, z1: T - lipH, paths: [...G.circle(Pv.x, Pv.y, discR + cxy), ...slot] });
-
-  // nose round post: short cantilever bridging the solid tongue to the junction
-  for (const b of rodBands(P, L + noseGap, nPost1, SCREW.rodR, T / 2)) body.bandAdds.push(b);
-  {
-    const k1 = P(L + 1.5), k2 = P(nPost1);  // keel kept clear of the junction gap
-    body.bandAdds.push({ z0: 0, z1: 0.3, paths: G.capsule(k1.x, k1.y, k2.x, k2.y, 1.4) }); // bed keel
-  }
-
-  // ---- gate: traced arm (solid) + pivot + threaded round post toward the tip ----
-  const padClear = G.circle(Pv.x, Pv.y, discR + cxy + 1.5 + cxy);
-  const gateBody = G.diff(G.diff(gatePaths, padClear), corridor);
-  const gate = { base: [G.circle(Pv.x, Pv.y, shaftR), gateBody], bandAdds: [], bandSubs: [], zTop: T };
-  gate.bandAdds.push({
-    z0: lipH + cz, z1: T - lipH - cz,
-    paths: [
-      ...G.circle(Pv.x, Pv.y, discR),
-      ...anchorCapsule(gateBody, gateMid.x, gateMid.y, Pv.x, Pv.y, 3.0),
-    ],
-  });
-  // gate post: rooted in the solid arm (starts before the carve), runs to the tip
-  for (const b of rodBands(P, gPost0 - 1.2, L, SCREW.rodR, T / 2)) gate.bandAdds.push(b);
-  {
-    const k1 = P(gPost0 - 0.6), k2 = P(L - 1.4);  // keel kept clear of the junction gap
-    gate.bandAdds.push({ z0: 0, z1: 0.3, paths: G.capsule(k1.x, k1.y, k2.x, k2.y, 1.4) }); // bed keel
-  }
-  // stop collar: full-height ring the parked sleeve seats against (also anchors the post)
-  {
-    const c = P(gPost0 - 0.2);
-    gate.bandAdds.push({ z0: 0, z1: T, paths: G.circle(c.x, c.y, SCREW.boreR + 0.75) });
-  }
-  // male helix on the gate post (z-clipped flat like the reference's 2.5D thread)
-  {
-    const helix = [];
-    const step = 0.3, dphi = step / SCREW.orbit;
-    for (let phi = 0; ; phi += dphi) {
-      const a = thr0 + (SCREW.pitch * phi) / (2 * Math.PI);
-      if (a > thr1) break;
-      const c = P(a);
-      helix.push({
-        x: c.x + axisN.x * SCREW.orbit * Math.cos(phi),
-        y: c.y + axisN.y * SCREW.orbit * Math.cos(phi),
-        z: T / 2 + SCREW.orbit * Math.sin(phi),
-      });
-    }
-    for (const b of sphereChainBands(helix, SCREW.wireR, 0.25)) {
-      if (b.z0 >= T) continue;
-      gate.bandAdds.push({ z0: b.z0, z1: Math.min(b.z1, T), paths: b.paths });
-    }
-  }
-
-  // ---- sleeve: separate print, stands on end beside the carabiner ----
-  const sleeve = { base: [], bandAdds: [], bandSubs: [], zTop: SCREW.sleeveL };
-  const kx = cxB - H / 2 - 7, ky = cy;
-  const kring = [];
-  const nK = 96;
-  for (let i = 0; i < nK; i++) {
-    const a = (i / nK) * Math.PI * 2;
-    const rr = SCREW.knurlR + SCREW.knurlAmp * Math.cos(a * SCREW.knurlN);
-    kring.push({ X: G.mm(kx + rr * Math.cos(a)), Y: G.mm(ky + rr * Math.sin(a)) });
-  }
-  const hs = 0.15;
-  for (let z = 0; z < SCREW.sleeveL - 1e-9; z += hs) {
-    const z1 = Math.min(z + hs, SCREW.sleeveL);
-    const phi = ((z + hs / 2) / SCREW.pitch) * Math.PI * 2;
-    sleeve.bandAdds.push({ z0: z, z1, paths: G.diff([kring], [
-      ...G.circle(kx, ky, SCREW.boreR),
-      ...G.capsule(kx, ky, kx + SCREW.rootR * Math.cos(phi), ky + SCREW.rootR * Math.sin(phi), SCREW.lobeW),
-    ]) });
-  }
-
-  addEyelet(body, edgeX, cy, +1);
-  return [body, gate, sleeve];
+export function buildCarabiner(edgeX, cy) {
+  const rot = -Math.PI / 2;                       // spine along +x, toward the chain
+  const cx = edgeX + 0.6 - CARB_H / 2;            // spine bend embeds into the eyelet
+  const frame = bandsToShape(CARB_FRAME, cx, cy, rot);
+  const gate = bandsToShape(CARB_GATE, cx, cy, rot);
+  const knob = bandsToShape(CARB_KNOB, cx - CARB_H / 2 - 10, cy, 0);
+  addEyelet(frame, edgeX, cy, +1);
+  return [frame, gate, knob];
 }
 
 export { minPointDist };
