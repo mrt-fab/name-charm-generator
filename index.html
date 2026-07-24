@@ -35,13 +35,11 @@
     font-family: -apple-system, BlinkMacSystemFont, 'Hiragino Sans', 'Noto Sans JP', system-ui, sans-serif;
     line-height: 1.5;
     color: var(--ink);
-    background:
-      radial-gradient(52% 64% at 10% 6%, #ffd3e3 0%, transparent 62%),
-      radial-gradient(48% 54% at 90% 10%, #c9e2ff 0%, transparent 64%),
-      radial-gradient(62% 74% at 82% 92%, #cff2dd 0%, transparent 62%),
-      radial-gradient(54% 64% at 14% 90%, #ffefc4 0%, transparent 60%),
-      radial-gradient(40% 44% at 50% 50%, #e8dcff 0%, transparent 70%),
-      linear-gradient(160deg, #f4f6fb 0%, #edf0f7 100%);
+    /* neutral studio backdrop (cyclorama): near-monochrome vertical gradient */
+    background: linear-gradient(178deg, #f5f5f7 0%, #ececef 58%, #e2e2e7 100%);
+  }
+  @media (prefers-color-scheme: dark) {
+    body { background: linear-gradient(178deg, #1c1c1e 0%, #141416 58%, #0e0e10 100%); }
   }
 
   #stage { position: fixed; inset: 0; }
@@ -55,6 +53,30 @@
   }
   #genProgress.show { opacity: 1; animation: genbar 3s cubic-bezier(0.1, 0.6, 0.2, 1) forwards; }
   @keyframes genbar { from { right: 100%; } to { right: 8%; } }
+
+  /* view preset cluster (bottom-left) */
+  #viewBar {
+    position: fixed; left: 18px; bottom: 18px; z-index: 5;
+    display: flex; gap: 4px; padding: 4px;
+    background: rgba(255,255,255,0.6);
+    backdrop-filter: blur(16px) saturate(160%);
+    -webkit-backdrop-filter: blur(16px) saturate(160%);
+    border: 1px solid rgba(255,255,255,0.55);
+    border-radius: 12px;
+    box-shadow: 0 6px 18px rgba(31,45,80,0.12);
+  }
+  #viewBar button {
+    width: 34px; height: 34px; border: none; border-radius: 9px; cursor: pointer;
+    background: transparent; color: var(--ink-2);
+    font-size: 0.8125rem; font-weight: 600; font-family: inherit;
+    transition: background 140ms ease, color 140ms ease, transform 100ms ease-out;
+  }
+  #viewBar button:hover { background: rgba(0,0,0,0.06); color: var(--ink); }
+  #viewBar button:active { transform: scale(0.93); }
+  @media (prefers-color-scheme: dark) {
+    #viewBar { background: rgba(30,30,34,0.6); border-color: rgba(255,255,255,0.12); }
+    #viewBar button:hover { background: rgba(255,255,255,0.1); }
+  }
 
   /* ---------- glass surfaces (one translucent layer; cards inside are near-opaque) */
   .glass {
@@ -277,6 +299,12 @@
 
   <div id="stage"><canvas id="viewport"></canvas></div>
   <div id="genProgress"></div>
+  <div id="viewBar">
+    <button data-view="fit" title="全体表示">⌂</button>
+    <button data-view="front" title="正面">正</button>
+    <button data-view="iso" title="斜め">斜</button>
+    <button data-view="top" title="上面（ベッド視点）">上</button>
+  </div>
 
   <header class="glass">
     <div>
