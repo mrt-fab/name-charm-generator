@@ -66,10 +66,12 @@ function linkPath(cx, cy, sign) {
 
 // ---- public API -------------------------------------------------------------
 
-// Loop tab merged into the first character. THIN (jump rings / straps must thread
-// it) and centered at mid-thickness for balance. Support-free print: a 45°
-// staircase ramp grows the underside out of the letter's flank, a slim foot rises
-// under the far cap, and the rails bridge the short span between them.
+// Loop tab merged into the first character, BOTTOM-ALIGNED and thin so it sits flat
+// on the bed. The chain, snap-ring and carabiner are all bed-mounted too, so with the
+// tab at z 0 the whole assembly connects cleanly at one plane. The first chain link
+// hangs off an eyelet on the tab's bed edge (see buildChain) — a tilted link threaded
+// directly through the flat loop hole fuses into the far wall, so the eyelet keeps it
+// clear while still reading as the chain coming straight off the loop tab.
 export function addLoopTab(shape, bbox, T, d) {
   const L = 11, W = 9, w = 2.2;
   const cy = G.toMm((bbox.minY + bbox.maxY) / 2);
@@ -79,31 +81,10 @@ export function addLoopTab(shape, bbox, T, d) {
   const link = anchorCapsule(shape.base[0], edge, cy, cx + L / 2 - w / 2, cy, W * 0.55);
   const fp = G.unionAll([...ring, ...link]);
   const hl = L / 2 - W / 2;
-
-  const tabT = Math.min(2.8, T);
-  const zT0 = (T - tabT) / 2, zT1 = zT0 + tabT;
-  const rect = (x0, x1) => [[
-    { X: G.mm(x0), Y: G.mm(cy - W) }, { X: G.mm(x1), Y: G.mm(cy - W) },
-    { X: G.mm(x1), Y: G.mm(cy + W) }, { X: G.mm(x0), Y: G.mm(cy + W) },
-  ]];
-
-  if (zT0 < 0.3) {
-    shape.base.push(fp);                       // thin letters: tab spans full height
-  } else {
-    shape.bandAdds.push({ z0: zT0, z1: zT1, paths: fp });
-    // 45° ramp out of the letter flank (each band reaches one step further left)
-    const step = 0.25;
-    for (let zb = 0; zb < zT0 - 1e-9; zb += step) {
-      const zt = Math.min(zb + step, zT0);
-      const reach = Math.min(zb + step, 1.7);  // stops before the loop hole
-      shape.bandAdds.push({ z0: zb, z1: zt, paths: G.intersect(fp, rect(edge - reach, edge + 3)) });
-    }
-    // slim foot under the far cap; the rails bridge ramp → foot (~5mm, printable)
-    shape.bandAdds.push({ z0: 0, z1: zT0, paths: G.intersect(fp, rect(cx - L / 2 - 1, cx - L / 2 + 1.1)) });
-  }
-
-  shape.bandSubs.push({ z0: 0, z1: T, paths: G.capsule(cx - hl, cy, cx + hl, cy, W - 2 * w) });
-  return { cx, cy, L, W, w, leftX: cx - L / 2, footprint: ring };
+  const tabT = Math.min(3.0, T);               // thin, sits on the bed (z 0)
+  shape.bandAdds.push({ z0: 0, z1: tabT, paths: fp });
+  shape.bandSubs.push({ z0: 0, z1: tabT, paths: G.capsule(cx - hl, cy, cx + hl, cy, W - 2 * w) });
+  return { cx, cy, L, W, w, tabT, leftX: cx - L / 2, footprint: ring };
 }
 
 // Chain + end hardware. Returns extra piece shapes (each with its own zTop).
@@ -114,11 +95,13 @@ export function buildChain(firstShape, loop, T, d, linkCount, endType) {
   if (linkCount === 0 && endType === 'none') return shapes;
   const n = Math.max(linkCount, endType !== 'none' ? 2 : 0); // end hardware needs ≥2 links
 
-  // eyelet on the loop tab for the first link
+  // eyelet on the loop tab's bed edge; the first link wraps its bar so the chain
+  // hangs straight off the (bed-aligned) loop tab
   const eye = addEyelet(firstShape, loop.leftX, cy, -1);
 
   const hl = CHAIN.Lc / 2 - CHAIN.Wc / 2;
   const paths3d = [];
+
   let cx = eye.barX - hl - 0.4; // first link's right cap wraps the eyelet bar
   for (let k = 0; k < n; k++) {
     const pts = linkPath(cx, cy, k % 2 === 0 ? 1 : -1);
@@ -238,36 +221,39 @@ export function buildCarabiner(edgeX, cy, d) {
   // reference, its cross-section is a circle barely clipped by the slab's flat
   // top/bottom, so the sleeve can rotate around it AND it prints flat on the bed.
   const SCREW = {
-    rodR: 1.95,          // core / gate-tip / nose rod radius (≈ T/2)
+    rodR: 1.85,          // gate-tip / nose post radius (sleeve-passable)
     wireR: 0.5,          // male thread wire radius
-    orbit: 2.25,         // helix centerline radius (wire embeds 0.2 into the core)
-    pitch: 2.2,
-    boreR: 2.30,         // sleeve internal thread crest (clears rod by 0.35)
-    rootR: 3.10,         // sleeve internal thread root (clears male crest 2.75 by 0.35)
-    lobeW: 1.7,          // sleeve groove width (male wire Ø + 2×0.35)
-    sleeveL: 8.0,
-    knurlR: 3.8, knurlAmp: 0.2, knurlN: 12,
+    orbit: 2.15,         // helix centerline radius
+    pitch: 2.0,
+    boreR: 2.25,         // sleeve bore (clears post 1.85 by 0.4)
+    rootR: 3.00,         // sleeve thread root (clears male crest ~2.65 by 0.35)
+    lobeW: 1.7,          // sleeve groove width
+    sleeveL: 6.0,
+    knurlR: 3.7, knurlAmp: 0.2, knurlN: 12,
   };
-  const a0 = 0.57 * L;                         // thread start (mid-arm, as in the reference)
-  const aTh1 = L - 1.6;                        // thread end (plain passage before the tip)
+  const axisN = { x: -u.y, y: u.x };
   const noseGap = 0.4;
+  const gPost0 = Math.max(6.5, L - 4.8);       // gate arm stays SOLID before this
+  const thr0 = gPost0 + 0.5, thr1 = L - 0.7;   // thread on the gate post
+  const nPost1 = L + 4.4;                       // nose round post end (sleeve-passable)
+  const tongue0 = L + 3.2, tongue1 = L + 7.4;   // solid nose tongue → hook root (strength)
 
-  // clearance corridors carved out of both traced outlines around the screw travel
+  // Only the sleeve barrel needs frame clearance — carve a snug channel over its
+  // travel and NOTHING else, so both the gate arm and the nose tongue stay solid.
   const carve = (from, to, r) => {
     const p1 = P(from), p2 = P(to);
     return G.capsule(p1.x, p1.y, p2.x, p2.y, 2 * r);
   };
-  const corridor = [
-    ...carve(a0 - 0.6, L + 0.8, 4.7),          // thread zone + reference's rest ledge
-    ...carve(L - 1.0, L + 4.9, 4.35),          // nose zone (hook root stays intact)
-  ];
+  const corridor = carve(gPost0 - 0.4, nPost1 - 0.2, SCREW.knurlR + 0.2);
 
-  // ---- body: traced outline (corridor carved) + pivot pad + coaxial nose rod ----
+  // ---- body: traced outline (barrel channel carved) + pivot pad + solid nose ----
   const discR = 2.4, shaftR = 1.5;
+  const tA = P(tongue0), tB = P(tongue1);
   const body = {
     base: [G.unionAll([
       ...G.diff(bodyPaths, corridor),
       ...G.circle(Pv.x, Pv.y, discR + cxy + 1.5),
+      ...G.capsule(tA.x, tA.y, tB.x, tB.y, 3.4),   // SOLID full-height nose tongue
     ])],
     bandAdds: [], bandSubs: [], zTop: T,
   };
@@ -283,14 +269,14 @@ export function buildCarabiner(edgeX, cy, d) {
   }
   body.bandSubs.push({ z0: lipH, z1: T - lipH, paths: [...G.circle(Pv.x, Pv.y, discR + cxy), ...slot] });
 
-  // nose: round rod continuing the gate axis past the junction, rooted in the hook
-  for (const b of rodBands(P, L + noseGap, L + 6.45, SCREW.rodR, T / 2)) body.bandAdds.push(b);
+  // nose round post: short cantilever bridging the solid tongue to the junction
+  for (const b of rodBands(P, L + noseGap, nPost1, SCREW.rodR, T / 2)) body.bandAdds.push(b);
   {
-    const k1 = P(L + noseGap + 0.8), k2 = P(L + 4.5);
+    const k1 = P(L + 1.5), k2 = P(nPost1);  // keel kept clear of the junction gap
     body.bandAdds.push({ z0: 0, z1: 0.3, paths: G.capsule(k1.x, k1.y, k2.x, k2.y, 1.4) }); // bed keel
   }
 
-  // ---- gate: traced arm (carved) + pivot + core rod + male helix + stop blade ----
+  // ---- gate: traced arm (solid) + pivot + threaded round post toward the tip ----
   const padClear = G.circle(Pv.x, Pv.y, discR + cxy + 1.5 + cxy);
   const gateBody = G.diff(G.diff(gatePaths, padClear), corridor);
   const gate = { base: [G.circle(Pv.x, Pv.y, shaftR), gateBody], bandAdds: [], bandSubs: [], zTop: T };
@@ -301,31 +287,28 @@ export function buildCarabiner(edgeX, cy, d) {
       ...anchorCapsule(gateBody, gateMid.x, gateMid.y, Pv.x, Pv.y, 3.0),
     ],
   });
-  // core rod: bridges the remaining traced arm and runs to the gate tip.
-  // Flat rear cut at 4.8 from the pivot keeps 0.5 to the body pad (r4.3) at every z.
-  for (const b of rodBands(P, 4.8, L, SCREW.rodR, T / 2, { flatFrom: true })) gate.bandAdds.push(b);
+  // gate post: rooted in the solid arm (starts before the carve), runs to the tip
+  for (const b of rodBands(P, gPost0 - 1.2, L, SCREW.rodR, T / 2)) gate.bandAdds.push(b);
   {
-    const k1 = P(6.0), k2 = P(L - 0.7);
+    const k1 = P(gPost0 - 0.6), k2 = P(L - 1.4);  // keel kept clear of the junction gap
     gate.bandAdds.push({ z0: 0, z1: 0.3, paths: G.capsule(k1.x, k1.y, k2.x, k2.y, 1.4) }); // bed keel
   }
-  // stop blade: thin full-height wall the parked sleeve rests against
+  // stop collar: full-height ring the parked sleeve seats against (also anchors the post)
   {
-    const c = P(a0 - 0.7);
-    const n = { x: -u.y, y: u.x };
-    gate.base.push(G.capsule(c.x - n.x * 2.6, c.y - n.y * 2.6, c.x + n.x * 2.6, c.y + n.y * 2.6, 1.4));
+    const c = P(gPost0 - 0.2);
+    gate.bandAdds.push({ z0: 0, z1: T, paths: G.circle(c.x, c.y, SCREW.boreR + 0.75) });
   }
-  // male helix: sphere-chain wire around the core (z-clipped flat like the reference)
+  // male helix on the gate post (z-clipped flat like the reference's 2.5D thread)
   {
     const helix = [];
     const step = 0.3, dphi = step / SCREW.orbit;
-    const n = { x: -u.y, y: u.x };
     for (let phi = 0; ; phi += dphi) {
-      const a = a0 + 1.2 + (SCREW.pitch * phi) / (2 * Math.PI);
-      if (a > aTh1) break;
+      const a = thr0 + (SCREW.pitch * phi) / (2 * Math.PI);
+      if (a > thr1) break;
       const c = P(a);
       helix.push({
-        x: c.x + n.x * SCREW.orbit * Math.cos(phi),
-        y: c.y + n.y * SCREW.orbit * Math.cos(phi),
+        x: c.x + axisN.x * SCREW.orbit * Math.cos(phi),
+        y: c.y + axisN.y * SCREW.orbit * Math.cos(phi),
         z: T / 2 + SCREW.orbit * Math.sin(phi),
       });
     }
