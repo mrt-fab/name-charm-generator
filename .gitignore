@@ -9,3 +9,4 @@ _kata_test*
 # 一時ファイル
 *.tmp
 dist/
+__pycache__/
