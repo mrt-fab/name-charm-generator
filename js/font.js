@@ -59,22 +59,26 @@ export function isLoaded(id) { return loaded.has(id); }
 
 export async function loadFont(def) {
   if (loaded.has(def.id)) return loaded.get(def.id);
-  const buf = await fetch(def.file).then((r) => {
+  // resolve relative to this module so it works from both the page and the worker
+  const url = new URL('../' + def.file, import.meta.url);
+  const buf = await fetch(url).then((r) => {
     if (!r.ok) throw new Error(`フォント取得失敗: ${def.file}`);
     return r.arrayBuffer();
   });
   return registerFont(def.id, buf, def.family);
 }
 
-// Also used for the user-provided Katakanaboy OTF (never persisted).
+// Also used for user-loaded fonts (never persisted anywhere but the user's browser).
 export function registerFont(id, arrayBuffer, family) {
   const font = window.opentype.parse(arrayBuffer);
   loaded.set(id, font);
-  // register for CSS previews too
-  try {
-    const face = new FontFace(family, arrayBuffer);
-    face.load().then(() => document.fonts.add(face)).catch(() => {});
-  } catch (_) { /* preview-only nicety */ }
+  // register for CSS previews too (main thread only — workers have no FontFace)
+  if (typeof FontFace !== 'undefined' && typeof document !== 'undefined' && document?.fonts) {
+    try {
+      const face = new FontFace(family, arrayBuffer);
+      face.load().then(() => document.fonts.add(face)).catch(() => {});
+    } catch (_) { /* preview-only nicety */ }
+  }
   return font;
 }
 
