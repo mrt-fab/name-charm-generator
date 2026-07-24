@@ -66,7 +66,10 @@ function linkPath(cx, cy, sign) {
 
 // ---- public API -------------------------------------------------------------
 
-// Loop tab merged into the first character (strap-friendly; unchanged mechanism).
+// Loop tab merged into the first character. THIN (jump rings / straps must thread
+// it) and centered at mid-thickness for balance. Support-free print: a 45°
+// staircase ramp grows the underside out of the letter's flank, a slim foot rises
+// under the far cap, and the rails bridge the short span between them.
 export function addLoopTab(shape, bbox, T, d) {
   const L = 11, W = 9, w = 2.2;
   const cy = G.toMm((bbox.minY + bbox.maxY) / 2);
@@ -74,8 +77,31 @@ export function addLoopTab(shape, bbox, T, d) {
   const cx = edge + 1.4 - L / 2;
   const ring = ovalRing(cx, cy, L, W, w);
   const link = anchorCapsule(shape.base[0], edge, cy, cx + L / 2 - w / 2, cy, W * 0.55);
-  shape.base.push(G.unionAll([...ring, ...link]));
+  const fp = G.unionAll([...ring, ...link]);
   const hl = L / 2 - W / 2;
+
+  const tabT = Math.min(2.8, T);
+  const zT0 = (T - tabT) / 2, zT1 = zT0 + tabT;
+  const rect = (x0, x1) => [[
+    { X: G.mm(x0), Y: G.mm(cy - W) }, { X: G.mm(x1), Y: G.mm(cy - W) },
+    { X: G.mm(x1), Y: G.mm(cy + W) }, { X: G.mm(x0), Y: G.mm(cy + W) },
+  ]];
+
+  if (zT0 < 0.3) {
+    shape.base.push(fp);                       // thin letters: tab spans full height
+  } else {
+    shape.bandAdds.push({ z0: zT0, z1: zT1, paths: fp });
+    // 45° ramp out of the letter flank (each band reaches one step further left)
+    const step = 0.25;
+    for (let zb = 0; zb < zT0 - 1e-9; zb += step) {
+      const zt = Math.min(zb + step, zT0);
+      const reach = Math.min(zb + step, 1.7);  // stops before the loop hole
+      shape.bandAdds.push({ z0: zb, z1: zt, paths: G.intersect(fp, rect(edge - reach, edge + 3)) });
+    }
+    // slim foot under the far cap; the rails bridge ramp → foot (~5mm, printable)
+    shape.bandAdds.push({ z0: 0, z1: zT0, paths: G.intersect(fp, rect(cx - L / 2 - 1, cx - L / 2 + 1.1)) });
+  }
+
   shape.bandSubs.push({ z0: 0, z1: T, paths: G.capsule(cx - hl, cy, cx + hl, cy, W - 2 * w) });
   return { cx, cy, L, W, w, leftX: cx - L / 2, footprint: ring };
 }

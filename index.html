@@ -440,6 +440,12 @@
           </div>
           <div class="hint">関節が固い→「ゆるめ」、ゆるすぎる→「きつめ」で再出力。</div>
           <div class="row">
+            <label class="name">関節の高さ</label>
+            <input type="range" id="jointPct" min="40" max="100" step="5" value="65">
+            <output id="jointPctOut">65%</output>
+          </div>
+          <div class="hint">関節部の高さ（文字の厚みに対する割合）。残りは主に天面側へオフセットし、底面側は45°の面取りで小さな足に絞ります（100%で従来どおり）。</div>
+          <div class="row">
             <label class="name">厚みmm指定</label>
             <input type="number" id="thickMm" min="3" max="28" step="0.5" placeholder="自動"
                    style="width:84px; padding:6px 8px; border:1px solid var(--field-stroke); border-radius:8px; background:var(--field); color:var(--ink); font-family:inherit;">
