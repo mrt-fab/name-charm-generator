@@ -47,6 +47,16 @@ export function exPolygons(paths) {
   return C.JS.PolyTreeToExPolygons(polyTreeOf(paths));
 }
 
+// Resolve loops with unknown winding (traced templates): EvenOdd fill → oriented paths.
+export function normalizeEvenOdd(paths) {
+  const c = new C.Clipper();
+  c.StrictlySimple = true;
+  c.AddPaths(paths, C.PolyType.ptSubject, true);
+  const out = new C.Paths();
+  c.Execute(C.ClipType.ctUnion, out, C.PolyFillType.pftEvenOdd, C.PolyFillType.pftEvenOdd);
+  return out;
+}
+
 // Top-level component count (disjoint solids).
 export function componentCount(paths) {
   return exPolygons(paths).length;

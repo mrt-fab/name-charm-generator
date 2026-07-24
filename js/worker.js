@@ -97,7 +97,7 @@ async function generate(text, p) {
   let zMax = 0;
   for (let pi = 0; pi < all.length; pi++) {
     const ranges = [];
-    for (const slab of buildSlabs(all[pi], T, p.colorCuts)) {
+    for (const slab of buildSlabs(all[pi], all[pi].zTop ?? T, p.colorCuts)) {
       const ci = Math.min(slab.colorIdx, nC - 1);
       const { tris } = slabsToTris([slab]);
       ranges.push({ color: ci, start: colorArrays[ci].length, count: tris.length });
