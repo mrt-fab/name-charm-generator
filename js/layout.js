@@ -3,21 +3,26 @@
 import * as G from './geom.js';
 import { charSolid } from './glyph2d.js';
 
-// Joint radial dimensions (mm). Z bands are derived from thickness T elsewhere (joint.js).
+// Bar-and-tunnel joint dimensions (mm) — the reference-photo mechanism. Every part
+// sits on the bed: A's bar (with a flared tip) runs along the text axis through a
+// tunnel in B's socket wall and is captured inside a pocket cavity behind it.
 export function jointDims(letterH, T, cxy, cz) {
-  const lipW = 1.2;
-  let discR = Math.min(6, Math.max(2.7, 0.175 * letterH));
-  let shaftR = discR - lipW;
-  if (shaftR < 1.5) { shaftR = 1.5; discR = shaftR + lipW; }
-  const wall = 1.6;
-  const cavR = discR + cxy;
-  const holeR = shaftR + cxy;
-  const padR = cavR + wall;
-  const armW = Math.min(3.5, 2 * shaftR);
-  const lipH = Math.max(1.0, Math.min(2.0, 0.24 * T));
-  const relief = 0.4; // z range of elephant-foot relief at the bottom
-  return { lipW, discR, shaftR, wall, cavR, holeR, padR, armW, lipH, relief, cxy, cz, T,
-           minSpan: cavR + discR + wall + 0.5 };
+  const hRod = Math.min(3.0, Math.max(1.6, 0.3 * T));        // bar height (z 0..hRod)
+  const wRod = Math.min(3.0, Math.max(2.2, 0.14 * letterH)); // bar width (Y)
+  const wallX = 2.2;                 // tunnel wall thickness along the text axis
+  const flare = 1.4;                 // flare widening per side (pull-out capture)
+  const flareL = 2.2;                // flare length along the text axis
+  const sideRoom = 0.9;              // pocket side room around the flare (swing)
+  const wFlare = wRod + 2 * flare;
+  const pocketY = wFlare + 2 * sideRoom;
+  const pocketX = flareL + 1.8;      // travel + swing room behind the wall
+  const hPocket = hRod + 0.6;        // flare's vertical play inside the pocket
+  const ceil = 1.4;                  // solid roof above the pocket
+  const sideWall = 1.8;              // socket block side walls
+  const relief = 0.4;                // z range of elephant-foot relief at the bottom
+  return { hRod, wRod, wallX, flare, wFlare, flareL, pocketY, pocketX, hPocket,
+           ceil, sideWall, relief, cxy, cz, T,
+           minSpan: wallX + pocketX + 4.0 };
 }
 
 // chars: array of characters (spaces allowed). Returns null-solid entries dropped with warnings.

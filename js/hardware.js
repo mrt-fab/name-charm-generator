@@ -66,25 +66,36 @@ function linkPath(cx, cy, sign) {
 
 // ---- public API -------------------------------------------------------------
 
-// Loop tab merged into the first character, BOTTOM-ALIGNED and thin so it sits flat
-// on the bed. The chain, snap-ring and carabiner are all bed-mounted too, so with the
-// tab at z 0 the whole assembly connects cleanly at one plane. The first chain link
-// hangs off an eyelet on the tab's bed edge (see buildChain) — a tilted link threaded
-// directly through the flat loop hole fuses into the far wall, so the eyelet keeps it
-// clear while still reading as the chain coming straight off the loop tab.
+// Loop = STANDING ring (torus in the YZ plane, hole axis along the text direction),
+// like the reference photo — the hole is perpendicular to the print layers, so a
+// metal 丸カン / key ring threads it the natural way. Built with the sphere-chain
+// sweep (a wire circle in the YZ plane), resting on the bed; a low stub ties its
+// bottom tube into the first letter's flank.
+//
+// The printed chain cannot thread the standing hole itself: the hole bottom sits a
+// tube-diameter above the bed while chain links print ON the bed, and a link's
+// return strand can't clear the ring's outside either — so with a chain enabled,
+// buildChain hangs the first link off a flat eyelet fused under the ring's base
+// (visually the chain flows straight out of the ring's foot).
 export function addLoopTab(shape, bbox, T, d) {
-  const L = 11, W = 9, w = 2.2;
+  const rt = 1.05;                 // tube radius (Ø2.1)
+  const holeR = 2.6;               // hole radius (Ø5.2, 丸カン-friendly)
+  const Rc = holeR + rt;           // wire centerline radius
+  const zc = Rc + rt;              // ring rests on the bed
   const cy = G.toMm((bbox.minY + bbox.maxY) / 2);
   const edge = G.toMm(bbox.minX);
-  const cx = edge + 1.4 - L / 2;
-  const ring = ovalRing(cx, cy, L, W, w);
-  const link = anchorCapsule(shape.base[0], edge, cy, cx + L / 2 - w / 2, cy, W * 0.55);
-  const fp = G.unionAll([...ring, ...link]);
-  const hl = L / 2 - W / 2;
-  const tabT = Math.min(3.0, T);               // thin, sits on the bed (z 0)
-  shape.bandAdds.push({ z0: 0, z1: tabT, paths: fp });
-  shape.bandSubs.push({ z0: 0, z1: tabT, paths: G.capsule(cx - hl, cy, cx + hl, cy, W - 2 * w) });
-  return { cx, cy, L, W, w, tabT, leftX: cx - L / 2, footprint: ring };
+  const rx = edge - 1.6 - rt;      // ring wall center, clear of the letter flank
+  const pts = [];
+  const nSeg = 72;
+  for (let i = 0; i <= nSeg; i++) {
+    const a = (i / nSeg) * Math.PI * 2;
+    pts.push({ x: rx, y: cy + Rc * Math.cos(a), z: zc + Rc * Math.sin(a) });
+  }
+  for (const b of sphereChainBands(pts, rt, 0.25)) shape.bandAdds.push(b);
+  // bed-level stub: covers under the tube bottom (bed foot) and ties into the letter
+  const stub = anchorCapsule(shape.base[0], edge, cy, rx - 1.0, cy, 2.6);
+  shape.bandAdds.push({ z0: 0, z1: 2.4, paths: stub });
+  return { rx, cy, rt, Rc, zc, leftX: rx, footprint: null };
 }
 
 // Chain + end hardware. Returns extra piece shapes (each with its own zTop).
@@ -95,8 +106,9 @@ export function buildChain(firstShape, loop, T, d, linkCount, endType) {
   if (linkCount === 0 && endType === 'none') return shapes;
   const n = Math.max(linkCount, endType !== 'none' ? 2 : 0); // end hardware needs ≥2 links
 
-  // eyelet on the loop tab's bed edge; the first link wraps its bar so the chain
-  // hangs straight off the (bed-aligned) loop tab
+  // flat eyelet fused under the standing ring's base (loop.leftX = ring wall
+  // center, so the eyelet's right end overlaps the tube bottom); the first link
+  // wraps its bar — the chain flows straight out of the ring's foot
   const eye = addEyelet(firstShape, loop.leftX, cy, -1);
 
   const hl = CHAIN.Lc / 2 - CHAIN.Wc / 2;
@@ -127,13 +139,34 @@ export function buildChain(firstShape, loop, T, d, linkCount, endType) {
 
 // ---- snap ring (traced from the reference pendant) --------------------------
 
+// The traced clasp (hook-and-eye tongue in a zigzag groove) has only a ~0.2mm slit —
+// it fused solid in the first test print (0.42mm extrusion). Widen the seam to 0.62mm
+// by carving along its stepped midline (template coords, measured from SNAP_RING).
+const CLASP_SEAM = [
+  [7.35, 2.51], [8.28, 2.51], [8.28, 0.12], [7.08, 1.22],
+  [7.08, -1.12], [8.92, -1.12], [9.55, -1.68],
+];
+
 function buildSnapRing(edgeX, cy) {
   const s = 1.0;                              // reference size ≈ Ø21.8mm
   const R = (SNAP_RING.w / 2) * s;
   const cx = edgeX + 0.6 - R;                 // eyelet embeds 0.6mm into the ring wall
   // rotate so the clasp (bottom-right in the trace) sits at the top, like the photo
-  const paths = templatePaths(SNAP_RING.loops, s, cx, cy, Math.PI);
-  const shape = { base: [], bandAdds: [{ z0: 0, z1: 3.2, paths }], bandSubs: [], zTop: 3.2 };
+  const rot = Math.PI;
+  const paths = templatePaths(SNAP_RING.loops, s, cx, cy, rot);
+  const seam = [];
+  const tp = (p) => ({ x: cx + (p[0] * Math.cos(rot) - p[1] * Math.sin(rot)) * s,
+                       y: cy + (p[0] * Math.sin(rot) + p[1] * Math.cos(rot)) * s });
+  for (let i = 0; i < CLASP_SEAM.length - 1; i++) {
+    const a = tp(CLASP_SEAM[i]), b = tp(CLASP_SEAM[i + 1]);
+    seam.push(...G.capsule(a.x, a.y, b.x, b.y, 0.62));
+  }
+  const shape = {
+    base: [],
+    bandAdds: [{ z0: 0, z1: 3.2, paths }],
+    bandSubs: [{ z0: 0, z1: 3.2, paths: G.unionAll(seam) }],
+    zTop: 3.2,
+  };
   addEyelet(shape, edgeX, cy, +1);
   return shape;
 }

@@ -79,15 +79,8 @@ async function generate(text, p, weld = false) {
   if (p.kataAuto && !hasGlyph(font, 'あ') && hasGlyph(font, 'ア')) text = hiraToKata(text);
 
   const T = p.thickness;
-  // Joints occupy a middle band of the letter thickness (default 65%): the leftover
-  // goes mostly to a clean top offset, and partly to a 45°-chamfered bottom offset
-  // (small bed feet, no overhang). Clamp keeps the joint mechanically functional.
-  const jointH = Math.min(T, Math.max(3.4, (T * (p.jointPct ?? 65)) / 100));
-  const free = T - jointH;
-  const bOff = Math.min(1.2, free * 0.45);
-  const dims = jointDims(p.letterH, jointH, p.clearance, p.cz);
-  dims.z0 = bOff;
-  dims.swing = (p.swingDeg * Math.PI) / 180;
+  // bar-and-tunnel joints sit at the bed; everything above them is pure letter
+  const dims = jointDims(p.letterH, T, p.clearance, p.cz);
 
   const lay = layoutString(text, p.fontId, p.letterH, p.dilate, dims);
   if (!lay.placed.length) {
