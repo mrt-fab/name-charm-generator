@@ -34,6 +34,9 @@ export function anchorCapsule(paths, edgeXmm, y, targetX, targetY, w) {
 
 // Build one joint: knob on A's right side, socket on B's left side.
 // Mutates shapeA / shapeB. C in mm.
+// d.T is the joint's EFFECTIVE height: the letters may be taller (piece zTop > d.T),
+// in which case every joint feature stays below d.T and the letter tops read clean
+// (reference look: the connection sits offset下 from the top face).
 export function buildJoint(shapeA, Abbox, shapeB, Bbbox, C, d) {
   const { discR, shaftR, cavR, holeR, padR, armW, lipH, relief, cxy, T } = d;
   const zCav0 = lipH, zCav1 = T - lipH;
@@ -43,7 +46,7 @@ export function buildJoint(shapeA, Abbox, shapeB, Bbbox, C, d) {
   const aEdge = G.toMm(Abbox.maxX);
   const glyphA = shapeA.base[0];
   const arm = anchorCapsule(glyphA, aEdge, C.y, C.x, C.y, armW);
-  shapeA.base.push(G.circle(C.x, C.y, shaftR));                    // shaft, full height
+  shapeA.bandAdds.push({ z0: 0, z1: T, paths: G.circle(C.x, C.y, shaftR) }); // shaft
   shapeA.bandAdds.push({ z0: zDisc0, z1: zDisc1, paths: [...G.circle(C.x, C.y, discR), ...arm] });
 
   // --- socket (B) ---
@@ -53,7 +56,7 @@ export function buildJoint(shapeA, Abbox, shapeB, Bbbox, C, d) {
   const padLink = anchorCapsule(glyphB, bEdge, C.y, C.x, C.y, Math.min(padR, armW * 1.6));
   // keep clearance to A's glyph body (pad reaches into A's territory)
   const pad = G.diff(G.unionAll([...padCore, ...padLink]), G.offset(glyphA, cxy));
-  shapeB.base.push(pad);
+  shapeB.bandAdds.push({ z0: 0, z1: T, paths: pad });
 
   // lip holes (shaft passage) + elephant-foot relief + cavity with swing slot
   shapeB.bandSubs.push({ z0: 0, z1: zCav0, paths: G.circle(C.x, C.y, holeR) });

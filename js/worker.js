@@ -70,7 +70,10 @@ async function generate(text, p) {
   if (p.kataAuto && !hasGlyph(font, 'あ') && hasGlyph(font, 'ア')) text = hiraToKata(text);
 
   const T = p.thickness;
-  const dims = jointDims(p.letterH, T, p.clearance, p.cz);
+  // joints live below the letters' top face so the top reads as pure letter shapes
+  // (the bottom stays flush for bed adhesion). Clamp keeps the joint functional.
+  const topOff = Math.min(Math.max(p.topOff ?? 1.0, 0), Math.max(0, T - 3.4));
+  const dims = jointDims(p.letterH, T - topOff, p.clearance, p.cz);
   dims.swing = (p.swingDeg * Math.PI) / 180;
 
   const lay = layoutString(text, p.fontId, p.letterH, p.dilate, dims);
