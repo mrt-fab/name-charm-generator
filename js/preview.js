@@ -88,6 +88,11 @@ function fitCamera(box) {
   camera.updateProjectionMatrix();
 }
 
+// Dim the viewport while a regeneration is in flight (stale-while-revalidate).
+export function setDimmed(on) {
+  renderer.domElement.classList.toggle('dimmed', on);
+}
+
 // Recolor existing meshes without rebuilding geometry (parts are in color order).
 export function setPartColors(colors) {
   group.children.forEach((child, i) => {

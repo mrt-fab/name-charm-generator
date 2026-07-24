@@ -45,7 +45,16 @@
   }
 
   #stage { position: fixed; inset: 0; }
-  #stage canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+  #stage canvas { width: 100%; height: 100%; display: block; touch-action: none; transition: opacity 200ms ease; }
+  #stage canvas.dimmed { opacity: 0.55; }
+
+  /* thin generation progress bar — appears only when a build exceeds 500ms */
+  #genProgress {
+    position: fixed; top: 0; left: 0; right: 100%; height: 2px; z-index: 20;
+    background: var(--accent); opacity: 0; transition: opacity 150ms ease;
+  }
+  #genProgress.show { opacity: 1; animation: genbar 3s cubic-bezier(0.1, 0.6, 0.2, 1) forwards; }
+  @keyframes genbar { from { right: 100%; } to { right: 8%; } }
 
   /* ---------- glass surfaces (one translucent layer; cards inside are near-opaque) */
   .glass {
@@ -223,7 +232,7 @@
     70% { box-shadow: 0 8px 20px rgba(0,113,227,0.35), 0 0 0 9px rgba(0,113,227,0); }
     100% { box-shadow: 0 8px 20px rgba(0,113,227,0.35), 0 0 0 0 rgba(0,113,227,0); }
   }
-  #generateBtn.stale { animation: pulseRing 1.8s cubic-bezier(0.3, 0.7, 0.4, 1) infinite; }
+  #textGenBtn.stale { animation: pulseRing 1.8s cubic-bezier(0.3, 0.7, 0.4, 1) infinite; }
 
   #stats { font-size: 0.6875rem; color: var(--ink-2); margin-top: 8px; line-height: 1.6; font-variant-numeric: tabular-nums; }
 
@@ -267,6 +276,7 @@
   </svg>
 
   <div id="stage"><canvas id="viewport"></canvas></div>
+  <div id="genProgress"></div>
 
   <header class="glass">
     <div>
@@ -281,6 +291,7 @@
       <section class="card">
         <h2>文字とフォント</h2>
         <input type="text" id="textInput" value="ナマエ" maxlength="20" placeholder="ひらがな・カタカナ・英数字">
+        <button class="btn" id="textGenBtn" style="margin-top:8px;">このテキストで生成</button>
         <div class="warn" id="warnMissing"></div>
         <div id="fontGrid" style="margin-top:10px;"></div>
         <div class="hint" id="fontNote" style="display:none;"></div>
@@ -299,14 +310,14 @@
       <section class="card">
         <h2>サイズ</h2>
         <div class="row">
-          <label class="name">文字の高さ</label>
-          <input type="range" id="letterH" min="12" max="40" step="1" value="20">
-          <output id="letterHOut">20mm</output>
+          <label class="name">文字の大きさ</label>
+          <input type="range" id="sizeMm" min="12" max="40" step="1" value="20">
+          <output id="sizeOut">20mm</output>
         </div>
         <div class="row">
           <label class="name">厚み</label>
-          <input type="range" id="thickness" min="3" max="10" step="0.5" value="5">
-          <output id="thicknessOut">5.0mm</output>
+          <input type="range" id="thickPct" min="30" max="70" step="5" value="50">
+          <output id="thickOut" style="min-width:96px;">50%（10.0mm）</output>
         </div>
       </section>
 
@@ -361,10 +372,8 @@
       </section>
 
       <section class="card">
-        <h2>生成・書き出し</h2>
-        <button class="btn" id="generateBtn">生成する</button>
+        <h2>書き出し</h2>
         <button class="btn secondary" id="exportBtn" disabled>STLをダウンロード</button>
-        <div class="hint" id="exportStale" style="display:none;">設定が変更されています。「生成する」で反映してからダウンロードしてください。</div>
         <div id="stats"></div>
         <div class="hint" id="bambuHint" style="display:none;">
           複数色: ZIPを展開し、Bambu Studioに全STLを同時ドラッグ →「1つのオブジェクトとして読み込みますか？」で<b>はい</b> → パーツごとにフィラメントを割り当ててください。
