@@ -1,4 +1,5 @@
-// joint.js — captured-disc rotation joints as banded 2D shapes (no 3D CSG).
+// joint.js — bar-and-tunnel joints (the reference-photo mechanism) as banded 2D
+// shapes (no 3D CSG).
 //
 // Each printable piece is a BandedShape:
 //   { base: [pathGroup…]      unioned at every z,
@@ -18,7 +19,6 @@ export function shapeZEdges(shape, T) {
 }
 
 // Iteratively grow a capsule from (targetX,targetY) into `paths` until union is connected.
-// side: -1 = paths lie to the left of target (grow leftwards), +1 = to the right.
 export function anchorCapsule(paths, edgeXmm, y, targetX, targetY, w) {
   const before = G.componentCount(paths);
   let embed = 2.5;
@@ -32,61 +32,75 @@ export function anchorCapsule(paths, edgeXmm, y, targetX, targetY, w) {
   return G.capsule(targetX, targetY, edgeXmm, y, w); // best effort
 }
 
-// Build one joint: knob on A's right side, socket on B's left side.
-// Mutates shapeA / shapeB. C in mm.
-// d.T is the joint's EFFECTIVE height and d.z0 its bottom offset: the letters may be
-// taller (piece zTop > z0+T), so the top face reads as pure letter shapes, and the
-// bottom offset is bridged by a 45° chamfer (staircase bands shrinking toward the
-// bed) so shaft and pad land on small feet — no overhang, reference look both sides.
+const rect = (x0, y0, x1, y1) => [[
+  { X: G.mm(x0), Y: G.mm(y0) }, { X: G.mm(x1), Y: G.mm(y0) },
+  { X: G.mm(x1), Y: G.mm(y1) }, { X: G.mm(x0), Y: G.mm(y1) },
+]];
+
+// Build one joint between A (left) and B (right). Mutates shapeA / shapeB. C in mm.
+//
+// The reference keychains articulate like a loose chain, not like a precision hinge:
+// A carries a bed-level BAR along the text axis ending in a FLARED tip; B carries a
+// low socket lobe whose WALL the bar passes through (a tunnel), with a POCKET cavity
+// behind the wall that captures the flare. Sideways the flare cannot pass the tunnel
+// (it is 2×flare wider); vertically the pocket roof holds it down. Clearance all
+// around gives the floppy multi-axis dangle seen in the reference photo. Everything
+// is bed-grounded: bar and flare print on the bed, the wall bridges the tunnel
+// opening and the roof bridges the pocket — the same print logic as the chain, which
+// survived the first test print. The letters stay full height above the joint, so
+// the top face reads as pure letter shapes.
 export function buildJoint(shapeA, Abbox, shapeB, Bbbox, C, d) {
-  const { discR, shaftR, cavR, holeR, padR, armW, lipH, relief, cxy, T } = d;
-  const z0 = d.z0 ?? 0;
-  const zTopJ = z0 + T;
-  const zCav0 = z0 + lipH, zCav1 = zTopJ - lipH;
-  const zDisc0 = zCav0 + d.cz, zDisc1 = zCav1 - d.cz;
-
-  // --- knob (A) ---
+  const { hRod, wRod, wallX, wFlare, flareL, pocketY, pocketX, hPocket, ceil,
+          sideWall, relief, cxy, cz } = d;
   const aEdge = G.toMm(Abbox.maxX);
-  const glyphA = shapeA.base[0];
-  const arm = anchorCapsule(glyphA, aEdge, C.y, C.x, C.y, armW);
-  shapeA.bandAdds.push({ z0, z1: zTopJ, paths: G.circle(C.x, C.y, shaftR) }); // shaft
-  shapeA.bandAdds.push({ z0: zDisc0, z1: zDisc1, paths: [...G.circle(C.x, C.y, discR), ...arm] });
-
-  // --- socket (B) ---
   const bEdge = G.toMm(Bbbox.minX);
+  const glyphA = shapeA.base[0];
   const glyphB = shapeB.base[0];
-  const padCore = G.circle(C.x, C.y, padR);
-  const padLink = anchorCapsule(glyphB, bEdge, C.y, C.x, C.y, Math.min(padR, armW * 1.6));
-  // keep clearance to A's glyph body (pad reaches into A's territory)
-  const pad = G.diff(G.unionAll([...padCore, ...padLink]), G.offset(glyphA, cxy));
-  shapeB.bandAdds.push({ z0, z1: zTopJ, paths: pad });
 
-  // 45° bottom chamfer: both parts shrink stepwise down to small bed feet
-  if (z0 > 1e-9) {
-    const step = 0.25;
-    for (let zb = 0; zb < z0 - 1e-9; zb += step) {
-      const zt = Math.min(zb + step, z0);
-      const shrink = z0 - (zb + zt) / 2;
-      const footShaft = Math.max(0.8, shaftR - shrink);
-      shapeA.bandAdds.push({ z0: zb, z1: zt, paths: G.circle(C.x, C.y, footShaft) });
-      const padFoot = G.offset(pad, -shrink);
-      if (padFoot.length) shapeB.bandAdds.push({ z0: zb, z1: zt, paths: padFoot });
-    }
+  // x stations (text axis): wall around the gap midline, pocket behind it into B
+  const xw0 = C.x - wallX / 2;                 // wall left face
+  const xw1 = xw0 + wallX;                     // wall right face = pocket start
+  const xp1 = xw1 + pocketX;                   // pocket end
+  const blockEnd = xp1 + 1.8;                  // solid behind the pocket
+  const hBlock = hPocket + ceil;
+
+  // --- socket lobe on B (carries wall + pocket; cleared from A's letter) ---
+  const blockW = pocketY + 2 * sideWall;
+  const block = G.diff(
+    G.unionAll([
+      ...rect(xw0, C.y - blockW / 2, blockEnd, C.y + blockW / 2),
+      ...anchorCapsule(glyphB, bEdge, C.y, xp1 - 1.0, C.y, Math.min(blockW, 6)),
+    ]),
+    G.offset(glyphA, cxy)
+  );
+  shapeB.bandAdds.push({ z0: 0, z1: hBlock, paths: block });
+
+  // pocket cavity + tunnel opening (subs carve the block AND B's glyph — the
+  // "えぐれ" seen on the reference letters)
+  const pocket = rect(xw1, C.y - pocketY / 2, xp1, C.y + pocketY / 2);
+  const mouthW = wRod + 2 * cxy;
+  const opening = rect(xw0 - 0.6, C.y - mouthW / 2, xw1 + 0.6, C.y + mouthW / 2);
+  // entrance splay: lets the bar yaw (in-plane fan) like the reference
+  const splay = [];
+  for (let k = -1; k <= 1; k++) {
+    const th = Math.PI + k * 0.38;
+    splay.push(...G.capsule(xw0 + 0.8, C.y,
+      xw0 + 0.8 + 5.5 * Math.cos(th), C.y + 5.5 * Math.sin(th), mouthW));
   }
+  shapeB.bandSubs.push({ z0: 0, z1: hPocket, paths: pocket });
+  shapeB.bandSubs.push({ z0: 0, z1: hRod + cz, paths: G.unionAll([...opening, ...splay]) });
+  // elephant-foot relief around the bar at the very bottom
+  shapeB.bandSubs.push({ z0: 0, z1: relief, paths: G.offset(G.unionAll([...pocket, ...opening]), 0.15) });
 
-  // lip holes (shaft passage) + elephant-foot relief + cavity with swing slot
-  shapeB.bandSubs.push({ z0: 0, z1: zCav0, paths: G.circle(C.x, C.y, holeR) });
-  shapeB.bandSubs.push({ z0: zCav1, z1: zTopJ, paths: G.circle(C.x, C.y, holeR) });
-  shapeB.bandSubs.push({ z0: 0, z1: relief, paths: G.circle(C.x, C.y, holeR + 0.15) });
-
-  const slot = [];
-  const swing = d.swing ?? (40 * Math.PI / 180);
-  const towardA = Math.sign(G.toMm(Abbox.maxX) - C.x) <= 0 ? Math.PI : 0; // A is left → π
-  for (let k = -3; k <= 3; k++) {
-    const th = towardA + (k / 3) * swing;
-    slot.push(...G.capsule(C.x, C.y,
-      C.x + (padR + 1.5) * Math.cos(th), C.y + (padR + 1.5) * Math.sin(th),
-      armW + 2 * cxy));
-  }
-  shapeB.bandSubs.push({ z0: zCav0, z1: zCav1, paths: [...G.circle(C.x, C.y, cavR), ...slot] });
+  // --- bar + flare on A (bed level, z 0..hRod) ---
+  const xFlareC = xw1 + flareL / 2 + 0.35;
+  const bar = [
+    ...anchorCapsule(glyphA, aEdge, C.y, xw0 - 1.0, C.y, wRod),
+    ...G.capsule(xw0 - 1.0, C.y, xFlareC, C.y, wRod),
+    // flare: stadium across Y, wFlare wide × flareL long
+    ...G.capsule(xFlareC, C.y - (wFlare - flareL) / 2, xFlareC, C.y + (wFlare - flareL) / 2, flareL),
+  ];
+  // keep clearance to B's glyph flank (if the glyph bulges into the joint zone the
+  // pocket subs already carve it, but the bar itself must not overlap B's material)
+  shapeA.bandAdds.push({ z0: 0, z1: hRod, paths: G.unionAll(bar) });
 }
